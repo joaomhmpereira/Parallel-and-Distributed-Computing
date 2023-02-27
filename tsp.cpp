@@ -97,7 +97,6 @@ void tsp(){
             }
         } else {
             for (int i = 0; i < n_nodes; i++) {
-                bool in_tour_var = in_tour(node->tour, matrix[id * n_nodes + i]);
                 if (matrix[id * n_nodes + i] != 0 && !in_tour(node->tour, i)) {
                     
                     double new_bound_value = newBound(cities[id], cities[i], node->lower_bound);
