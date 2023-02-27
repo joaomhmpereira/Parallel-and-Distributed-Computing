@@ -32,7 +32,7 @@ double * matrix;
 std::vector<City> cities;
 
 double initialLowerBound(){
-    double LB;
+    double LB = 0;
     for (int i = 0; i < n_nodes; i++) {
         LB += cities[i]->min1 + cities[i]->min2;
     }
@@ -44,7 +44,10 @@ double newBound(City source, City target, double lower_bound){
     double cf = cost >= source->min2 ? source->min2 : source->min1;
     double ct = cost >= target->min2 ? target->min2 : target->min1;  
     
-    return lower_bound + cost - (cf + ct) / 2;
+    double newLB = lower_bound + cost - (cf + ct) / 2;
+    //cout << "New lower bound for source " << source->id << " and target " << target->id <<": " << newLB << endl;
+
+    return newLB;
 }
 
 bool in_tour(std::vector<int> tour, int v) {
@@ -55,7 +58,7 @@ bool in_tour(std::vector<int> tour, int v) {
 }
 
 void tsp(){
-    Node root = (Node) malloc(sizeof(struct node));
+    Node root = (Node) calloc(1, sizeof(struct node));
     std::vector<Node> nodes_created;
     root->tour.push_back(0);
     root->cost = 0;
@@ -64,21 +67,15 @@ void tsp(){
     root->current_city = 0;
     nodes_created.push_back(root);
 
-    cout << "Initial lower bound: " << root->lower_bound << endl;
-
     // initialize priority queue
     PriorityQueue<Node> queue;
     queue.push(root);
 
     best_tour_cost = max_value;
 
-    cout << "CHECK 1" << endl;
-
     while (!queue.empty()){
         Node node = queue.pop();
-        int id = node->current_city;
-        
-        cout << "CHECK 2" << endl;
+        int id = node->current_city;        
 
         // All remaining nodes worse than best
         if (node->lower_bound >= best_tour_cost) {
@@ -87,27 +84,27 @@ void tsp(){
         
         // Tour complete, check if it is best
         if (node->length == n_nodes) {
-            cout << "Tour complete" << endl;
+            //cout << "Tour complete" << endl;
             if (node->cost + matrix[id * n_nodes + 0] < best_tour_cost) { 
-                cout << "New best tour found" << endl; 
+                //cout << "New best tour found" << endl; 
                 best_tour = node->tour;
                 best_tour.push_back(0);
+                //for (int i = 0; i < best_tour.size(); i++) {
+                //    cout << best_tour.at(i) << " ";
+                //}
+                //cout << endl;
                 best_tour_cost = node->cost + matrix[id * n_nodes + 0];
             }
         } else {
-            cout << "CHECK 3" << endl;
             for (int i = 0; i < n_nodes; i++) {
-                if (matrix[id * n_nodes + i] != 0 && !in_tour(node->tour, matrix[id * n_nodes + i])) {
-                    cout << "NODE " << i << endl;
+                bool in_tour_var = in_tour(node->tour, matrix[id * n_nodes + i]);
+                if (matrix[id * n_nodes + i] != 0 && !in_tour(node->tour, i)) {
                     
                     double new_bound_value = newBound(cities[id], cities[i], node->lower_bound);
-                    cout << "New bound value: " << new_bound_value << endl;
                     if(new_bound_value > best_tour_cost) {
                         continue;
                     }
-                    cout << "CHECK 4" << endl;
-                    
-                    Node newNode = (Node) malloc(sizeof(struct node));
+                    Node newNode = (Node) calloc(1, sizeof(struct node));
                     newNode->tour = node->tour;
                     newNode->tour.push_back(i);
                     newNode->cost = node->cost + matrix[id * n_nodes + i];
@@ -117,11 +114,10 @@ void tsp(){
                     queue.push(newNode);
                     nodes_created.push_back(newNode);
                     //print node tour
-                    for (int j = 0; j < newNode->tour.size(); j++) {
-                        cout << newNode->tour.at(j) << " ";
-                    }
-                    cout << endl;
-                    cout << "CHECK 5" << endl;
+                    //for (int j = 0; j < newNode->tour.size(); j++) {
+                    //    cout << newNode->tour.at(j) << " ";
+                    //}
+                    //cout << endl;
                 }
             }
         }
@@ -134,7 +130,7 @@ void tsp(){
 }
 
 void readInputFile(string inputFile) {
-    cout << "Reading input file" << endl;
+    //cout << "Reading input file" << endl;
     ifstream myFile;
     myFile.open(inputFile, ios::in);
     if(!myFile) {
@@ -147,15 +143,13 @@ void readInputFile(string inputFile) {
     myFile >> n_nodes >> n_edges;
 
     for (int i = 0; i < n_nodes; i++) {
-        City city = (City) malloc(sizeof(struct city));
+        City city = (City) calloc(1, sizeof(struct city));
         city->id = i;
         city->min1 = -1;
         city->min2 = -1;
         cities.push_back(city);
     }
-    cout << "For" << endl;
     matrix = (double *) calloc(n_nodes * n_nodes, sizeof(double));
-    cout << "Matrix initialized" << endl;
     // initialize matrix and every city with min1 and min2 values
     while (myFile >> coord1 >> coord2 >> dist) {
         matrix[coord1 * n_nodes + coord2] = dist;
@@ -204,19 +198,31 @@ void readInputFile(string inputFile) {
     
     myFile.close();
 
-    //print matrix
-    for (int i = 0; i < n_nodes; i++) {
-        for (int j = 0; j < n_nodes; j++) {
-            cout << matrix[j * n_nodes + i] << " ";
+    ////print matrix
+    //for (int i = 0; i < n_nodes; i++) {
+    //    for (int j = 0; j < n_nodes; j++) {
+    //        cout << matrix[j * n_nodes + i] << " ";
+    //    }
+    //    cout << endl;
+    //}
+
+    //print cities
+    //for (int i = 0; i < n_nodes; i++) {
+    //    cout << "City " << i << ": " << cities[i]->min1 << " " << cities[i]->min2 << endl;
+    //}
+
+}
+
+void print_result() {
+    if (best_tour_cost > max_value || best_tour.size() == 0){
+        cout << "NO SOLUTION" << endl;
+    } else {
+        fprintf(stdout, "%.1f\n", best_tour_cost);
+        for (int i = 0; i < best_tour.size(); i++) {
+            cout << best_tour.at(i) << " ";
         }
         cout << endl;
     }
-
-    //print cities
-    for (int i = 0; i < n_nodes; i++) {
-        cout << "City " << i << ": " << cities[i]->min1 << " " << cities[i]->min2 << endl;
-    }
-
 }
 
 int main(int argc, char *argv[]) {
@@ -234,8 +240,8 @@ int main(int argc, char *argv[]) {
     tsp();
     
     exec_time += omp_get_wtime();
-    fprintf(stderr, "%.1fs\n", exec_time);
-    //print_result();       // to the stdout! TODO
+    //fprintf(stderr, "%.1fs\n", exec_time);
+    print_result();
 
     free(matrix);
     for (int i = 0; i < cities.size(); i++) {
