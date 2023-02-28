@@ -13,19 +13,23 @@
 //
 // Parameters:
 // - "T": Type of each element in the queue
+// - "Compare": Type of the callable object with the compare function
 //
 // Usage Example:
 // PriorityQueue<int> queue;       // Creates a new queue of ints
-// queue.push(10);                 // Add the element "10" to the queue
+// queue.push(10);                 // Add the element "10" to the queue.
 // queue.push(5);                  // Add the element "5" to the queue. The program will automatically sort the queue.
 // int val = queue.pop();          // Remove the lowest element in the queue. In this case, "val = 5"
 //
-// Note: this structure assumes that the operator ">" is defined for "T", i.e., for the struct/class "T",
-// struct T {
-// friend bool operator>(T left, T right) { return left > right; }			// Change here how the elements compare to each other
-// }
+// Note: this structure assumes that the operator ">" is defined for "T", i.e.,
+// bool operator>(const T& left, const T& right) { return left > right; }			// Change here how the elements compare to each other
 //
-template<typename T>
+// Alternatively, you can also define a struct that hold the compare function:
+// struct cmp_op { bool operator()(const T& left, const T& right) { return left > right; } }
+// and then pass it to the template parameters of the priority queue:
+// PriorityQueue<int, cmp_op> queue;
+//
+template<typename T, typename Compare = std::greater<T>>
 class PriorityQueue
 {
     private:
@@ -33,6 +37,9 @@ class PriorityQueue
 
 		// Array for storing the elements in the binary heap
 		std::vector<T> _buffer;
+		
+		// Callable object with the compare function
+		Compare _cmp;
 		
 		// Return the index of the parent node
 		static index_t parent_of(index_t i)
@@ -50,13 +57,13 @@ class PriorityQueue
 			index_t i = node;
 			
 			// Compare with the left node
-			if (left_child < _buffer.size() and _buffer[node] > _buffer[left_child])
+			if (left_child < _buffer.size() and _cmp(_buffer[node], _buffer[left_child]))
 			{
 				i = left_child;
 			}
 			
 			// Compare with the right node
-			if (right_child < _buffer.size() and _buffer[i] > _buffer[right_child])
+			if (right_child < _buffer.size() and _cmp(_buffer[i], _buffer[right_child]))
 			{
 				i = right_child;
 			}
@@ -92,7 +99,7 @@ class PriorityQueue
 			return _buffer.data();
 		}
 		
-		// Insert a new element. This routine automatically sorts the queue
+		// Insert a new element using the copy semantics. This routine automatically sorts the queue
 		void push(const T& new_element)
 		{
 			// Insert the new_element at the end of the buffer
@@ -101,7 +108,7 @@ class PriorityQueue
 			
 			// Bubble-up the new element to the correct position
 			// (i.e., compare it to the parent and then swap them if necessary)
-			while (node > 0 and _buffer[parent_of(node)] > _buffer[node])
+			while (node > 0 and _cmp(_buffer[parent_of(node)], _buffer[node]))
 			{
 				index_t parent = parent_of(node);
 				std::swap(_buffer[node], _buffer[parent]);
@@ -109,16 +116,16 @@ class PriorityQueue
 			}
 		}
 		
-		// Insert a new element. This routine automatically sorts the queue
+		// Insert a new element using the move semantics. This routine automatically sorts the queue.
 		void push(T&& new_element)
 		{
 			// Insert the new_element at the end of the buffer
 			index_t node = _buffer.size();
-			_buffer.push_back(std::move(new_element));
+			_buffer.push_back(std::forward<T>(new_element));
 			
 			// Bubble-up the new element to the correct position
 			// (i.e., compare it to the parent and then swap them if necessary)
-			while (node > 0 and _buffer[parent_of(node)] > _buffer[node])
+			while (node > 0 and _cmp(_buffer[parent_of(node)], _buffer[node]))
 			{
 				index_t parent = parent_of(node);
 				std::swap(_buffer[node], _buffer[parent]);
@@ -133,10 +140,10 @@ class PriorityQueue
 			if (empty()) return T();
 			
 			// Stores the lowest element in a temporary
-			T top_val = _buffer.front();
+			T top_val = std::move(_buffer.front());
 			
 			// Put the last element in the queue in the front.
-			_buffer.front() = _buffer.back();
+			_buffer[0] = std::move(_buffer.back());
 			
 			// Remove the duplicated element in the back.
 			_buffer.pop_back();

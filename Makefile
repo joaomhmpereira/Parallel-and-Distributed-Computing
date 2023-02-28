@@ -9,3 +9,6 @@ tsp:
 
 clean:
 	$(RM) tsp
+
+test: clean tsp
+	python3 testing.py

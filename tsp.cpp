@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cstring>
 #include <vector>
+#include <queue>
 #include <omp.h>
 #include "nqueue/queue.hpp"
 
@@ -19,9 +20,11 @@ typedef struct node {
     double lower_bound;
     int length;
     int current_city;
-    friend bool operator>(struct node left, struct node right) { return left.lower_bound > right.lower_bound 
-                        || (left.lower_bound == right.lower_bound && left.current_city > right.current_city); }
 } * Node;
+
+struct cmp_op { bool operator()(const Node& n1, const Node& n2) {
+        return n1->lower_bound > n2->lower_bound || (n1->lower_bound == n2->lower_bound && n1->current_city < n2->current_city);
+}};
 
 double max_value, best_tour_cost;
 std::vector<int> best_tour; 
@@ -68,13 +71,16 @@ void tsp(){
     nodes_created.push_back(root);
 
     // initialize priority queue
-    PriorityQueue<Node> queue;
+    PriorityQueue<Node, cmp_op> queue;
+    //priority_queue<Node, vector<Node>, cmp_op> queue;
     queue.push(root);
 
     best_tour_cost = max_value;
 
     while (!queue.empty()){
         Node node = queue.pop();
+        //Node node = queue.top();
+        //queue.pop();
         int id = node->current_city;        
 
         // All remaining nodes worse than best
@@ -128,12 +134,34 @@ void tsp(){
     return;
 }
 
+void update_mins(int coord, int dist) {
+    if (cities[coord]->min1 == -1) { cities[coord]->min1 = dist; } // if min1 is not set, set it
+    else if (cities[coord]->min2 == -1) {  // if min2 is not set, set it
+        if (dist < cities[coord]->min1) { // if dist is smaller than min1, set min2 to min1 and min1 to dist
+            cities[coord]->min2 = cities[coord]->min1;
+            cities[coord]->min1 = dist;
+        }
+        else { // if dist is bigger than min1, set min2 to dist
+            cities[coord]->min2 = dist;
+        }
+    }
+    else { // if min1 and min2 are set, check if dist is smaller than min1 or min2
+        if (dist < cities[coord]->min1) { // if dist is smaller than min1, set min2 to min1 and min1 to dist
+            cities[coord]->min2 = cities[coord]->min1;
+            cities[coord]->min1 = dist;
+        }
+        else if (dist < cities[coord]->min2) { // if dist is smaller than min2, set min2 to dist
+            cities[coord]->min2 = dist;
+        }
+    }
+}
+
 void readInputFile(string inputFile) {
     //cout << "Reading input file" << endl;
     ifstream myFile;
     myFile.open(inputFile, ios::in);
     if(!myFile) {
-        cout << "NO SOLUTION";
+        cout << "error opening file";
         exit(1);
     }
     int coord1, coord2;
@@ -154,45 +182,8 @@ void readInputFile(string inputFile) {
         matrix[coord1 * n_nodes + coord2] = dist;
         matrix[coord2 * n_nodes + coord1] = dist;
 
-        if (cities[coord1]->min1 == -1) { cities[coord1]->min1 = dist; } // if min1 is not set, set it
-        else if (cities[coord1]->min2 == -1) {  // if min2 is not set, set it
-            if (dist < cities[coord1]->min1) { // if dist is smaller than min1, set min2 to min1 and min1 to dist
-                cities[coord1]->min2 = cities[coord1]->min1;
-                cities[coord1]->min1 = dist;
-            }
-            else { // if dist is bigger than min1, set min2 to dist
-                cities[coord1]->min2 = dist;
-            }
-        }
-        else { // if min1 and min2 are set, check if dist is smaller than min1 or min2
-            if (dist < cities[coord1]->min1) { // if dist is smaller than min1, set min2 to min1 and min1 to dist
-                cities[coord1]->min2 = cities[coord1]->min1;
-                cities[coord1]->min1 = dist;
-            }
-            else if (dist < cities[coord1]->min2) { // if dist is smaller than min2, set min2 to dist
-                cities[coord1]->min2 = dist;
-            }
-        }
-
-        if (cities[coord2]->min1 == -1) { cities[coord2]->min1 = dist; }
-        else if (cities[coord2]->min2 == -1) { 
-            if (dist < cities[coord2]->min1) {
-                cities[coord2]->min2 = cities[coord2]->min1;
-                cities[coord2]->min1 = dist;
-            }
-            else {
-                cities[coord2]->min2 = dist;
-            }
-        }
-        else {
-            if (dist < cities[coord2]->min1) {
-                cities[coord2]->min2 = cities[coord2]->min1;
-                cities[coord2]->min1 = dist;
-            }
-            else if (dist < cities[coord2]->min2) {
-                cities[coord2]->min2 = dist;
-            }
-        }
+        update_mins(coord1, dist);
+        update_mins(coord2, dist);
     }
     
     myFile.close();
