@@ -19,11 +19,18 @@ typedef struct node {
     double cost;
     double lower_bound;
     int length;
-    int current_city;
 } * Node;
 
 struct cmp_op { bool operator()(const Node& n1, const Node& n2) {
-        return n1->lower_bound > n2->lower_bound || (n1->lower_bound == n2->lower_bound && n1->current_city < n2->current_city);
+    if (n1->lower_bound > n2->lower_bound) { 
+        return true; 
+    }
+    else if (n1->lower_bound == n2->lower_bound) {
+        return n1->tour.back() > n2->tour.back();
+    }
+    else {
+        return false;
+    }
 }};
 
 double max_value, best_tour_cost;
@@ -63,11 +70,12 @@ bool in_tour(std::vector<int> tour, int v) {
 void tsp(){
     Node root = (Node) calloc(1, sizeof(struct node));
     std::vector<Node> nodes_created;
+    
     root->tour.push_back(0);
     root->cost = 0;
     root->lower_bound = initialLowerBound();
     root->length = 1;
-    root->current_city = 0;
+
     nodes_created.push_back(root);
 
     // initialize priority queue
@@ -81,10 +89,16 @@ void tsp(){
         Node node = queue.pop();
         //Node node = queue.top();
         //queue.pop();
-        int id = node->current_city;        
+        int id = node->tour.back();        
+        //cout << "Current node: " << id << endl;
+        //cout << "Current level: " << node->length-1 << endl;
+        //cout << "Lower bound: " << node->lower_bound << endl;
 
         // All remaining nodes worse than best
         if (node->lower_bound >= best_tour_cost) {
+            for (int i = 0; i < nodes_created.size(); i++) {
+                free(nodes_created.at(i));
+            }
             return;
         }
         
@@ -115,7 +129,6 @@ void tsp(){
                     newNode->cost = node->cost + matrix[id * n_nodes + i];
                     newNode->lower_bound = new_bound_value;
                     newNode->length = node->length + 1;
-                    newNode->current_city = i;
                     queue.push(newNode);
                     nodes_created.push_back(newNode);
                     //print node tour
@@ -127,10 +140,10 @@ void tsp(){
             }
         }
     }
-    
     for (int i = 0; i < nodes_created.size(); i++) {
         free(nodes_created.at(i));
     }
+    
     return;
 }
 
@@ -230,7 +243,7 @@ int main(int argc, char *argv[]) {
     tsp();
     
     exec_time += omp_get_wtime();
-    //fprintf(stderr, "%.1fs\n", exec_time);
+    fprintf(stderr, "%.1fs\n", exec_time);
     print_result();
 
     free(matrix);

@@ -1,6 +1,6 @@
-CXX=g++
+CXX=g++-12
 RM=rm -f
-CFLAGS=-O3 -fopenmp
+CFLAGS=-O3 -fopenmp -ggdb3
 
 all: tsp
 
