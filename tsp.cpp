@@ -54,10 +54,7 @@ double newBound(City source, City target, double lower_bound){
     double cf = cost >= source->min2 ? source->min2 : source->min1;
     double ct = cost >= target->min2 ? target->min2 : target->min1;  
     
-    double newLB = lower_bound + cost - (cf + ct) / 2;
-    //cout << "New lower bound for source " << source->id << " and target " << target->id <<": " << newLB << endl;
-
-    return newLB;
+    return lower_bound + cost - (cf + ct) / 2;
 }
 
 bool in_tour(std::vector<int> tour, int v) {
@@ -76,43 +73,34 @@ void tsp(){
     root->lower_bound = initialLowerBound();
     root->length = 1;
 
-    nodes_created.push_back(root);
+    //nodes_created.push_back(root);
 
     // initialize priority queue
     PriorityQueue<Node, cmp_op> queue;
-    //priority_queue<Node, vector<Node>, cmp_op> queue;
     queue.push(root);
 
     best_tour_cost = max_value;
 
     while (!queue.empty()){
         Node node = queue.pop();
-        //Node node = queue.top();
-        //queue.pop();
         int id = node->tour.back();        
-        //cout << "Current node: " << id << endl;
-        //cout << "Current level: " << node->length-1 << endl;
-        //cout << "Lower bound: " << node->lower_bound << endl;
+        
+        //cout << "Queue size: " << queue.size() << endl;
 
         // All remaining nodes worse than best
         if (node->lower_bound >= best_tour_cost) {
-            for (int i = 0; i < nodes_created.size(); i++) {
-                free(nodes_created.at(i));
-            }
+            //for (int i = 0; i < nodes_created.size(); i++) {
+            //    free(nodes_created[i]);
+            //}
+            free(node);
             return;
         }
         
         // Tour complete, check if it is best
         if (node->length == n_nodes) {
-            //cout << "Tour complete" << endl;
             if (node->cost + matrix[id * n_nodes + 0] < best_tour_cost) { 
-                //cout << "New best tour found" << endl; 
                 best_tour = node->tour;
                 best_tour.push_back(0);
-                //for (int i = 0; i < best_tour.size(); i++) {
-                //    cout << best_tour.at(i) << " ";
-                //}
-                //cout << endl;
                 best_tour_cost = node->cost + matrix[id * n_nodes + 0];
             }
         } else {
@@ -130,19 +118,15 @@ void tsp(){
                     newNode->lower_bound = new_bound_value;
                     newNode->length = node->length + 1;
                     queue.push(newNode);
-                    nodes_created.push_back(newNode);
-                    //print node tour
-                    //for (int j = 0; j < newNode->tour.size(); j++) {
-                    //    cout << newNode->tour.at(j) << " ";
-                    //}
-                    //cout << endl;
+                    //nodes_created.push_back(newNode);
                 }
             }
         }
+        free(node);
     }
-    for (int i = 0; i < nodes_created.size(); i++) {
-        free(nodes_created.at(i));
-    }
+    //for (int i = 0; i < nodes_created.size(); i++) {
+    //    free(nodes_created[i]);
+    //}
     
     return;
 }
@@ -200,20 +184,6 @@ void readInputFile(string inputFile) {
     }
     
     myFile.close();
-
-    ////print matrix
-    //for (int i = 0; i < n_nodes; i++) {
-    //    for (int j = 0; j < n_nodes; j++) {
-    //        cout << matrix[j * n_nodes + i] << " ";
-    //    }
-    //    cout << endl;
-    //}
-
-    //print cities
-    //for (int i = 0; i < n_nodes; i++) {
-    //    cout << "City " << i << ": " << cities[i]->min1 << " " << cities[i]->min2 << endl;
-    //}
-
 }
 
 void print_result() {
@@ -248,7 +218,7 @@ int main(int argc, char *argv[]) {
 
     free(matrix);
     for (int i = 0; i < cities.size(); i++) {
-        free(cities.at(i));
+        free(cities[i]);
     }
     return 0;
 }
