@@ -13,7 +13,7 @@ typedef struct
 	void** buffer;
 	size_t size;
 	size_t max_size;
-        char (*cmpfn)(void *, void *);
+	char (*cmpfn)(void *, void *);
 } priority_queue_t;
 
 // Create a new priority queue

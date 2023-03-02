@@ -132,4 +132,7 @@ void queue_print(priority_queue_t* queue, FILE *fp,
 		void* node = queue_pop(queue_copy);
 		print_node(fp, node);
 	}
+
+	queue_delete(queue_copy);
+	free(queue_copy);
 }
