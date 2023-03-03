@@ -136,7 +136,8 @@ void tsp(){
         
         // tour complete, check if it is best
         if (node->length == n_cities) {
-            if (node->cost + matrix[id * n_cities + 0] < best_tour_cost) { 
+            if (node->cost + matrix[id * n_cities + 0] < best_tour_cost 
+            && matrix[id * n_cities + 0] != 0) {
                 best_tour_node = node;
                 best_tour_cost = node->cost + matrix[id * n_cities + 0];
             }
