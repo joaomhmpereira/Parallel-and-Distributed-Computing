@@ -22,7 +22,6 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
-    bool * cities;         /* vector of size n_cities that tells which cities are in the tour */
     int * tour;            /* tour so far (it's ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
@@ -31,18 +30,8 @@ typedef struct node { /* a node in the search tree */
 
 /* determines whether a node is "smaller" than another node */
 struct cmp_op { bool operator()(const Node& n1, const Node& n2) {
-    /* either if the lower bound is smaller */
-    if (n1->lower_bound > n2->lower_bound) { 
-        return true; 
-    }
-    /* or, if it's equal, if the id is smaller */
-    else if (n1->lower_bound == n2->lower_bound) {
-        return n1->tour[n1->length - 1] > n2->tour[n2->length - 1];
-    }
-    /* otherwise, it isn't */
-    else {
-        return false;
-    }
+    return (n1->lower_bound > n2->lower_bound) 
+    || (n1->lower_bound == n2->lower_bound && n1->tour[n1->length - 1] > n2->tour[n2->length - 1]);
 }};
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -60,18 +49,21 @@ double initialLowerBound(int n_cities, City * cities) {
 double newBound(City source, City target, double lower_bound, int n_cities, double * matrix){
     double cost = matrix[source->id * n_cities + target->id];
     double cf = cost >= source->min2 ? source->min2 : source->min1;
-    double ct = cost >= target->min2 ? target->min2 : target->min1;  
-    
+    double ct = cost >= target->min2 ? target->min2 : target->min1;
+
     return lower_bound + cost - (cf + ct) / 2;
 }
 
 /* determines if city v is in the tour */
-bool in_tour(bool * cities, int v) {
-    return cities[v];
+bool in_tour(int * tour, int length, int v) {
+    for (int i = 0; i < length; i++) {
+        if (tour[i] == v) { return true; }
+    }
+    return false;
 }
 
 /* updates the min1 and min2 of the city given by coord */
-void update_mins(int coord, int dist, City ** cities) {
+void update_mins(int coord, double dist, City ** cities) {
     if ((*cities)[coord]->min1 == -1) { (*cities)[coord]->min1 = dist; } // if min1 is not set, set it
     else if ((*cities)[coord]->min2 == -1) {  // if min2 is not set, set it
         if (dist < (*cities)[coord]->min1) { // if dist is smaller than min1, set min2 to min1 and min1 to dist
@@ -97,9 +89,6 @@ void update_mins(int coord, int dist, City ** cities) {
 
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities){
     Node root = (Node) calloc(1, sizeof(struct node));
-    
-    root->cities = (bool *) calloc(n_cities, sizeof(int));
-    root->cities[0] = true;
 
     root->tour = (int *) calloc(n_cities, sizeof(int));
     root->tour[0] = 0;
@@ -117,47 +106,47 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
     while (!queue.empty()){
         Node node = queue.pop();
-        int id = node->tour[node->length - 1];        
-        
+        int id = node->tour[node->length - 1];
+
         //cout << "Queue size: " << queue.size() << endl;
 
         // All remaining nodes worse than best
         if (node->lower_bound >= (*best_tour_cost)) {
             free(node->tour);
-            free(node->cities);
             free(node);
             while (!queue.empty()) {
                 Node n = queue.pop();
                 free(n->tour);
-                free(n->cities);
                 free(n);
             }
             return;
         }
-        
+
         // Tour complete, check if it is best
         if (node->length == n_cities) {
-            if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) { 
-                memcpy((*best_tour), node->tour, sizeof(int) * n_cities);
-                (*best_tour)[n_cities] = 0;
+            if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) {
+                int i;
+                for (i = 0; i < n_cities; i++) {
+                    (*best_tour)[i] = node->tour[i];
+                }
+                (*best_tour)[i] = 0;
+
                 (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
             }
         } else {
             for (int i = 0; i < n_cities; i++) {
-                if (matrix[id * n_cities + i] != 0 && !in_tour(node->cities, i)) {
+                if (matrix[id * n_cities + i] != 0 && !in_tour(node->tour, node->length, i)) {
                     double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
                     if(new_bound_value > (*best_tour_cost)) {
                         continue;
                     }
                     Node newNode = (Node) calloc(1, sizeof(struct node));
                     newNode->tour = (int *) calloc(n_cities, sizeof(int));
-                    memcpy(newNode->tour, node->tour, sizeof(int) * n_cities);
-                    newNode->tour[node->length] = i;
-
-                    newNode->cities = (bool *) calloc(n_cities, sizeof(bool));
-                    memcpy(newNode->cities, node->cities, sizeof(bool) * n_cities);
-                    newNode->cities[i] = true;
-
+                    int j;
+                    for (j = 0; j < node->length; j++) {
+                        newNode->tour[j] = node->tour[j];
+                    }
+                    newNode->tour[j] = i;
                     newNode->cost = node->cost + matrix[id * n_cities + i];
                     newNode->lower_bound = new_bound_value;
                     newNode->length = node->length + 1;
@@ -166,10 +155,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         }
         free(node->tour);
-        free(node->cities);
         free(node);
     }
-    
+
     return;
 }
 
@@ -196,7 +184,7 @@ void readInputFile(string inputFile, int * n_cities, int * n_roads, double ** ma
     }
 
     *matrix = (double *) calloc((*n_cities) * (*n_cities), sizeof(double));
-    
+
     // initialize matrix and every city with min1 and min2 values
     while (myFile >> coord1 >> coord2 >> dist) {
         (*matrix)[coord1 * (*n_cities) + coord2] = dist;
@@ -205,7 +193,7 @@ void readInputFile(string inputFile, int * n_cities, int * n_roads, double ** ma
         update_mins(coord1, dist, cities);
         update_mins(coord2, dist, cities);
     }
-    
+
     myFile.close();
 }
 
@@ -244,7 +232,7 @@ int main(int argc, char *argv[]) {
 
     // cout << n_cities << endl;
     // cout << n_roads << endl;
-    
+
     // for (int i = 0; i < n_cities; i++) {
     //     cout << cities[i]->id << endl;
     //     for (int j = 0; j < n_cities; j++) {
@@ -260,17 +248,15 @@ int main(int argc, char *argv[]) {
     exec_time = -omp_get_wtime();
 
     tsp(&best_tour_cost, max_value, n_cities, &best_tour, matrix, cities);
-    
+
     exec_time += omp_get_wtime();
     fprintf(stderr, "%.1fs\n", exec_time);
-    
+
     print_result(best_tour_cost, max_value, n_cities, best_tour);
 
     free(matrix);
     for (int i = 0; i < n_cities; i++) {
         free(cities[i]);
     }
-    free(cities);
-    free(best_tour);
     return 0;
 }
