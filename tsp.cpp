@@ -138,12 +138,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         // Tour complete, check if it is best
         if (node->length == n_cities) {
             if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) { 
-                int i;
-                for (i = 0; i < n_cities; i++) {
-                    (*best_tour)[i] = node->tour[i];
-                }
-                (*best_tour)[i] = 0;
-                
+                memcpy((*best_tour), node->tour, sizeof(int) * n_cities);
+                (*best_tour)[n_cities] = 0;
                 (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
             }
         } else {
@@ -155,15 +151,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     }
                     Node newNode = (Node) calloc(1, sizeof(struct node));
                     newNode->tour = (int *) calloc(n_cities, sizeof(int));
-                    int j;
-                    for (j = 0; j < node->length; j++) {
-                        newNode->tour[j] = node->tour[j];
-                    }
-                    newNode->tour[j] = i;
+                    memcpy(newNode->tour, node->tour, sizeof(int) * n_cities);
+                    newNode->tour[node->length] = i;
 
-                    newNode->cities = (bool *) calloc(n_cities, sizeof(int));
-                    for (int k = 0; k < n_cities; k++) 
-                        newNode->cities[k] = node->cities[k]; 
+                    newNode->cities = (bool *) calloc(n_cities, sizeof(bool));
+                    memcpy(newNode->cities, node->cities, sizeof(bool) * n_cities);
                     newNode->cities[i] = true;
 
                     newNode->cost = node->cost + matrix[id * n_cities + i];
