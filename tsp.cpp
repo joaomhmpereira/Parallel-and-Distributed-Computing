@@ -207,6 +207,7 @@ void print_result(double best_tour_cost, double max_value, int n_cities, int * b
         }
         cout << endl;
     }
+    free(best_tour);
 }
 
 int main(int argc, char *argv[]) {
@@ -258,5 +259,6 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < n_cities; i++) {
         free(cities[i]);
     }
+    free(cities);
     return 0;
 }
