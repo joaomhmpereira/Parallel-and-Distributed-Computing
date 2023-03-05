@@ -119,6 +119,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         Node node = queue.pop();
         int id = node->tour[node->length - 1];        
         
+        cout << "In " << id << endl;       
+
         //cout << "Queue size: " << queue.size() << endl;
 
         // All remaining nodes worse than best
