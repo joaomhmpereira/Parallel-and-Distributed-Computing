@@ -22,6 +22,7 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
+    bool * cities;         /* vector of size n_cities that tells which cities are in the tour */
     int * tour;            /* tour so far (it's ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
@@ -65,11 +66,8 @@ double newBound(City source, City target, double lower_bound, int n_cities, doub
 }
 
 /* determines if city v is in the tour */
-bool in_tour(int * tour, int length, int v) {
-    for (int i = 0; i < length; i++) {
-        if (tour[i] == v) { return true; }
-    }
-    return false;
+bool in_tour(bool * cities, int v) {
+    return cities[v];
 }
 
 /* updates the min1 and min2 of the city given by coord */
@@ -100,6 +98,9 @@ void update_mins(int coord, int dist, City ** cities) {
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities){
     Node root = (Node) calloc(1, sizeof(struct node));
     
+    root->cities = (bool *) calloc(n_cities, sizeof(int));
+    root->cities[0] = true;
+
     root->tour = (int *) calloc(n_cities, sizeof(int));
     root->tour[0] = 0;
 
@@ -123,10 +124,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         // All remaining nodes worse than best
         if (node->lower_bound >= (*best_tour_cost)) {
             free(node->tour);
+            free(node->cities);
             free(node);
             while (!queue.empty()) {
                 Node n = queue.pop();
                 free(n->tour);
+                free(n->cities);
                 free(n);
             }
             return;
@@ -145,7 +148,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         } else {
             for (int i = 0; i < n_cities; i++) {
-                if (matrix[id * n_cities + i] != 0 && !in_tour(node->tour, node->length, i)) {
+                if (matrix[id * n_cities + i] != 0 && !in_tour(node->cities, i)) {
                     double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
                     if(new_bound_value > (*best_tour_cost)) {
                         continue;
@@ -157,6 +160,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         newNode->tour[j] = node->tour[j];
                     }
                     newNode->tour[j] = i;
+
+                    newNode->cities = (bool *) calloc(n_cities, sizeof(int));
+                    for (int k = 0; k < n_cities; k++) 
+                        newNode->cities[k] = node->cities[k]; 
+                    newNode->cities[i] = true;
+
                     newNode->cost = node->cost + matrix[id * n_cities + i];
                     newNode->lower_bound = new_bound_value;
                     newNode->length = node->length + 1;
@@ -165,6 +174,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         }
         free(node->tour);
+        free(node->cities);
         free(node);
     }
     
@@ -268,5 +278,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < n_cities; i++) {
         free(cities[i]);
     }
+    free(cities);
+    free(best_tour);
     return 0;
 }
