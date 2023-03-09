@@ -1,6 +1,6 @@
-CXX=g++-12
+CXX=g++
 RM=rm -f
-CFLAGS=-O3 -fopenmp -ggdb3
+CFLAGS=-O3 -fopenmp
 
 all: tsp
 
@@ -9,6 +9,3 @@ tsp:
 
 clean:
 	$(RM) tsp
-
-test: clean tsp
-	python3 testing.py
