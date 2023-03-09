@@ -107,8 +107,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         Node node = queue.pop();
         int id = node->tour[node->length - 1];
 
-        //cout << "Queue size: " << queue.size() << endl;
-
         // All remaining nodes worse than best
         if (node->lower_bound >= (*best_tour_cost)) {
             free(node->tour);
@@ -233,20 +231,7 @@ int main(int argc, char *argv[]) {
 
     readInputFile(argv[1], &n_cities, &n_roads, &matrix, &cities);
 
-    // cout << n_cities << endl;
-    // cout << n_roads << endl;
-
-    // for (int i = 0; i < n_cities; i++) {
-    //     cout << cities[i]->id << endl;
-    //     for (int j = 0; j < n_cities; j++) {
-    //         cout << matrix[i * n_cities + j] << "\t";
-    //     }
-    //     cout << endl;
-    // }
-
     max_value = stod(argv[2]);
-
-    //cout << max_value << endl;
 
     exec_time = -omp_get_wtime();
 
