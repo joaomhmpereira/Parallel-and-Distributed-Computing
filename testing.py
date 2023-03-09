@@ -1,7 +1,7 @@
 import difflib
 import os
 from glob import glob
-
+import re
 
 HEADER = '\033[95m'
 OKBLUE = '\033[94m'
@@ -24,7 +24,6 @@ def PrintFail(arg, name):
         print(f"{OKRED}{BOLD}\t-->\t{name.upper()} FAILED{ENDC}\n\n")
     return True
 
-
 def PrintPass(name):
     print(f'{OKGREEN}{BOLD}\t-->\t{name.upper()} PASSED{ENDC}\n\n')
 
@@ -35,14 +34,19 @@ print("\n\t -----------------",
 
 test_statistics = {"total": 0, "failed": 0, "passed": 0}
 
-for test in glob(PATH_TO_TESTS):
+test_files = sorted(glob(PATH_TO_TESTS))
+for test in test_files:
     test_statistics["total"] += 1
 
     _, name = os.path.split(test)
 
     print(f'  {OKBLUE}{name.upper()} --| {ENDC}')
 
-    os.system(f'./{FILE_TO_TEST} < {test} > our_output/{test}')
+    r1 = re.findall(r"\d+", test)
+
+    print("DEBUGGGG")
+    print(test + " " + r1[-1])
+    os.system(f'./{FILE_TO_TEST} {test} {r1[-1]} > our_output/{test}')
 
     output = open(f"output/{test}").readlines()
     tmp = open(f'our_output/{test}').readlines()
@@ -56,7 +60,7 @@ for test in glob(PATH_TO_TESTS):
         test_statistics["passed"] += 1
     else:
         test_statistics["failed"] += 1
-
+    
 if test_statistics["failed"] > 0:
     print(
         f'{BOLD}{OKRED}\t FAILED -> TOTAL: {test_statistics["total"]} | PASSED: {test_statistics["passed"]} | FAILED: {test_statistics["failed"]}')

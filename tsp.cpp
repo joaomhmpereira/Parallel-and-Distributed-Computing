@@ -7,7 +7,6 @@
 #include <fstream>
 #include <cstring>
 #include <vector>
-#include <queue>
 #include <omp.h>
 #include "nqueue/queue.hpp"
 
@@ -22,7 +21,7 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
-    int * tour;            /* tour so far (it's ancestors) */
+    int * tour;            /* tour so far (its ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
     int length;            /* tour size */
@@ -203,7 +202,10 @@ void print_result(double best_tour_cost, double max_value, int n_cities, int * b
     } else {
         fprintf(stdout, "%.1f\n", best_tour_cost);
         for (int i = 0; i < n_cities + 1; i++) {
-            cout << best_tour[i] << " ";
+            if (i == n_cities) 
+                cout << best_tour[i];
+            else
+                cout << best_tour[i] << " ";
         }
         cout << endl;
     }
