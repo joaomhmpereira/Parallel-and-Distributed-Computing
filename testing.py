@@ -14,7 +14,7 @@ ENDC = '\033[0m'
 BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
-FILE_TO_TEST = "tsp"
+FILE_TO_TEST = "tsp-omp"
 
 PATH_TO_TESTS = "pub-instances/*"
 
@@ -44,8 +44,6 @@ for test in test_files:
 
     r1 = re.findall(r"\d+", test)
 
-    print("DEBUGGGG")
-    print(test + " " + r1[-1])
     os.system(f'./{FILE_TO_TEST} {test} {r1[-1]} > our_output/{test}')
 
     output = open(f"output/{test}").readlines()
