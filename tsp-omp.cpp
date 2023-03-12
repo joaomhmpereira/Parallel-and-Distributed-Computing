@@ -84,6 +84,17 @@ void update_mins(int coord, double dist, City ** cities) {
     }
 }
 
+bool toReturn(bool to_return[], int size) {
+    for(int i = 0; i < size; i++){
+        if (to_return[i]) {
+            printf("< thread %d is still running >\n", i);
+            return true;
+        }
+    }
+    printf("All threads are done\n");
+    return false;
+}
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities, int n_roads){
@@ -103,103 +114,115 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     (*best_tour_cost) = max_value;
     (*best_tour) = (int *) calloc(n_cities + 1, sizeof(int));
 
-    // #pragma omp parallel 
-    // {
-    while (!queue.empty()){
-        //bool a = false;
-        //Node node;
-        //#pragma omp critical(queue_lock)
-        //{
-        //    if (!queue.empty()){
-        //        a = true;
-        //        node = queue.pop();
-        //    }
-        //}
-        //if(!a) break;
-        Node node = queue.pop();
-        int id = node->tour[node->length - 1];
+    /* TODO: o que e melhor: verificar esta flag em todo o lado ou meter nested ifs? */
 
-        // All remaining nodes worse than best
-        // bool aux;
-        // #pragma omp critical(best_tour_lock)
-        // aux = node->lower_bound >= (*best_tour_cost);
+    bool * to_return;
+    int n_threads;
+    #pragma omp parallel shared(to_return, n_threads)
+    {
+    n_threads = omp_get_num_threads();
+    to_return = (bool*) calloc(n_threads, sizeof(int));
+
+    const int thread_id = omp_get_thread_num();
+    while (!toReturn(to_return, n_threads)) {
+        Node node;
+        #pragma omp critical(queue_lock)
+        if (!queue.empty()){
+            printf("--- Thread %d got the node ---\n", thread_id);
+            to_return[thread_id] = false;
+            node = queue.pop();
+        }
+        else {
+            printf("--- Thread %d is setting flag to false ---\n", thread_id);
+            to_return[thread_id] = true;
+        }
+
+        int id;
+        if (!to_return[thread_id])
+            id = node->tour[node->length - 1];
         
-        if (node->lower_bound >= (*best_tour_cost)) {
+        // All remaining nodes worse than best
+        bool aux = false;
+        #pragma omp critical(best_tour_lock)
+        if (!to_return[thread_id]) {
+            aux = (node->lower_bound >= (*best_tour_cost));
+            //printf("AUX INSIDE: %d Thread id: %d\n", aux, thread_id);
+        }
+        //printf("AUX OUTSIDE: %d Thread id: %d\n", aux, thread_id);
+        
+        if (!(to_return[thread_id]) && aux) {
             free(node->tour);
             free(node);
+
+            #pragma omp critical(queue_lock)
             while (!queue.empty()) {
                 Node n = queue.pop();
                 free(n->tour);
                 free(n);
             }
-            // while (1) {
-            //     bool k = false;
-            //     #pragma omp critical(queue_lock)
-            //     {
-            //         if (!queue.empty()){
-            //             k = true;
-            //             Node n = queue.pop();
-            //             free(n->tour);
-            //             free(n);
-            //         }
-            //     }
-            //     if (!k) break;
-            // }
-            return;
+            
+            printf("--- Setting all thread flags to false --- (made by thread: %d)\n", thread_id);
+            for (int i = 0; i < n_threads; i++)
+                to_return[i] = true;
         }
-
-        // Tour complete, check if it is best
-        if (node->length == n_cities) {
-            /* CRITICAL: need to check and update only one at each time */
-            //#pragma omp critical(best_tour_lock)
-            if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) {
-                int i;
-                for (i = 0; i < n_cities; i++) {
-                    (*best_tour)[i] = node->tour[i];
-                }
-                (*best_tour)[i] = 0;
-                
-                (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
-            }
-        } 
-        else {
-            /* PARALLEL FOR */
-            /* testar condicoes:
-                - n_roads
-                - n_cities
-                - max_value
-             */
-            #pragma omp parallel for //schedule(dynamic, 2)
-            for (int i = 0; i < n_cities; i++) {
-                if (matrix[id * n_cities + i] != 0 && !in_tour(node->tour, node->length, i)) {
-                    double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
+        else if (!to_return[thread_id]) {
+            // Tour complete, check if it is best
+            if (node->length == n_cities) {
+                /* CRITICAL: need to check and update only one at each time */
+                #pragma omp critical(best_tour_lock)
+                if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) {
+                    int i;
+                    for (i = 0; i < n_cities; i++) {
+                        (*best_tour)[i] = node->tour[i];
+                    }
+                    (*best_tour)[i] = 0;
                     
-                    /* CRITICAL: cannot check while someone is writing here */
-                    //#pragma omp critical(best_tour_lock)
-                    if (new_bound_value <= (*best_tour_cost)) {
-                        Node newNode = (Node) calloc(1, sizeof(struct node));
-                        newNode->tour = (int *) calloc(n_cities, sizeof(int));
-                        int j;
-                        for (j = 0; j < node->length; j++) {
-                            newNode->tour[j] = node->tour[j];
-                        }
-                        newNode->tour[j] = i;
-                        newNode->cost = node->cost + matrix[id * n_cities + i];
-                        newNode->lower_bound = new_bound_value;
-                        newNode->length = node->length + 1;
+                    (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
+                }
+            } 
+            else {
+                /* PARALLEL FOR */
+                /* testar condicoes:
+                    - n_roads
+                    - n_cities
+                    - max_value
+                */
+                //#pragma omp parallel for //schedule(dynamic, 2)
+                for (int i = 0; i < n_cities; i++) {
+                    if (matrix[id * n_cities + i] != 0 && !in_tour(node->tour, node->length, i)) {
+                        double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
+                        
+                        /* CRITICAL: cannot check while someone is writing here */
+                        bool aux_2 = false;
+                        #pragma omp critical(best_tour_lock)
+                        aux_2 = (new_bound_value <= (*best_tour_cost));
+                        
+                        if (aux_2) {
+                            Node newNode = (Node) calloc(1, sizeof(struct node));
+                            newNode->tour = (int *) calloc(n_cities, sizeof(int));
+                            int j;
+                            for (j = 0; j < node->length; j++) {
+                                newNode->tour[j] = node->tour[j];
+                            }
+                            newNode->tour[j] = i;
+                            newNode->cost = node->cost + matrix[id * n_cities + i];
+                            newNode->lower_bound = new_bound_value;
+                            newNode->length = node->length + 1;
 
-                        /* CRITICAL: access to the queue */
-                        #pragma omp critical(queue_lock)
-                        queue.push(newNode);
+                            /* CRITICAL: access to the queue */
+                            #pragma omp critical(queue_lock)
+                            queue.push(newNode);
+                        }
                     }
                 }
             }
+
+            free(node->tour);
+            free(node);
+            
         }
-        /* BARRIER + SINGLE */
-        free(node->tour);
-        free(node);
+    }        
     }
-    //}
     return;
 }
 
