@@ -88,6 +88,7 @@ void update_mins(int coord, double dist, City ** cities) {
 
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities){
     Node root = (Node) calloc(1, sizeof(struct node));
+    bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
 
     root->tour = (int *) calloc(n_cities, sizeof(int));
     root->tour[0] = 0;
@@ -116,6 +117,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 free(n->tour);
                 free(n);
             }
+            free(tour_nodes);
             return;
         }
 
@@ -131,7 +133,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
             }
         } else {
-            bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
+            
             for (int i = 0; i < node->length; i++) {
                 tour_nodes[node->tour[i]] = true;
             }
@@ -143,23 +145,26 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         continue;
                     }
                     Node newNode = (Node) calloc(1, sizeof(struct node));
-                    newNode->tour = (int *) calloc(n_cities, sizeof(int));
-                    int j;
-                    for (j = 0; j < node->length; j++) {
+                    newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
+                    for (int j = 0; j < node->length; j++) {
                         newNode->tour[j] = node->tour[j];
                     }
-                    newNode->tour[j] = i;
+                    newNode->tour[node->length] = i;
                     newNode->cost = node->cost + matrix[id * n_cities + i];
                     newNode->lower_bound = new_bound_value;
                     newNode->length = node->length + 1;
                     queue.push(newNode);
                 }
             }
+
+            memset(tour_nodes, false, sizeof(tour_nodes));
+
         }
         free(node->tour);
         free(node);
     }
 
+    free(tour_nodes);
     return;
 }
 
