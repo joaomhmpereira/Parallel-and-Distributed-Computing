@@ -14,7 +14,7 @@ ENDC = '\033[0m'
 BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
-FILE_TO_TEST = "tsp-omp"
+FILE_TO_TEST = "tsp"
 
 PATH_TO_TESTS = "pub-instances/*"
 

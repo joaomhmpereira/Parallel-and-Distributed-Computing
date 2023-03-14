@@ -131,8 +131,13 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
             }
         } else {
+            bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
+            for (int i = 0; i < node->length; i++) {
+                tour_nodes[node->tour[i]] = true;
+            }
+            
             for (int i = 0; i < n_cities; i++) {
-                if (matrix[id * n_cities + i] != 0 && !in_tour(node->tour, node->length, i)) {
+                if (matrix[id * n_cities + i] != 0 && !tour_nodes[i]) {
                     double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
                     if(new_bound_value > (*best_tour_cost)) {
                         continue;
