@@ -61,9 +61,9 @@ for test in test_files:
     
 if test_statistics["failed"] > 0:
     print(
-        f'{BOLD}{OKRED}\t FAILED -> TOTAL: {test_statistics["total"]} | PASSED: {test_statistics["passed"]} | FAILED: {test_statistics["failed"]}')
+        f'{BOLD}{OKRED}\t FAILED -> TOTAL: {test_statistics["total"]} | PASSED: {test_statistics["passed"]} | FAILED: {test_statistics["failed"]}{ENDC}')
 else:
     print(
-        f'{BOLD}{OKGREEN}\t PASSED -> TOTAL: {test_statistics["total"]} | PASSED: {test_statistics["passed"]} | FAILED: {test_statistics["failed"]}')
+        f'{BOLD}{OKGREEN}\t PASSED -> TOTAL: {test_statistics["total"]} | PASSED: {test_statistics["passed"]} | FAILED: {test_statistics["failed"]}{ENDC}')
 
 print()

@@ -157,7 +157,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 }
             }
 
-            memset(tour_nodes, false, sizeof(tour_nodes));
+            memset(tour_nodes, false, n_cities * sizeof(bool));
 
         }
         free(node->tour);
