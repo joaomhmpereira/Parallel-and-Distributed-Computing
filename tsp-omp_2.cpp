@@ -80,7 +80,6 @@ void update_mins(int coord, double dist, City ** cities) {
 
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities){
     Node root = (Node) calloc(1, sizeof(struct node));
-    bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
 
     root->tour = (int *) calloc(1, sizeof(int));
     root->tour[0] = 0;
@@ -88,6 +87,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     root->cost = 0;
     root->lower_bound = initialLowerBound(n_cities, cities);
     root->length = 1;
+
+    //printf("Alloc node id=%d\n", root->tour[root->length - 1]);
 
     // initialize priority queue
     PriorityQueue<Node, cmp_op> queue;
@@ -101,6 +102,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     
     #pragma omp parallel 
     {
+        bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
+        //printf("Alloc tour_nodes for thread %d\n", omp_get_thread_num());
         bool will_not_work = false;
         n_threads = omp_get_num_threads();
         
@@ -111,13 +114,13 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 if (!queue.empty()){
                     will_not_work = false;
                     node = queue.pop();
+                    //printf("!!! Thread %d got the node !!!\n", omp_get_thread_num());
                 }
                 else {
                     //printf("!!! Thread %d found the queue empty !!!\n", thread_id);
                     will_not_work = true;
                 }
             }
-            
 
             int id = 0;
             if (!will_not_work) 
@@ -130,16 +133,19 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
             // All remaining nodes worse than best
             if (!will_not_work && aux) {
+                //printf("Free node id=%d\n", node->tour[node->length - 1]);
                 free(node->tour);
                 free(node);
 
                 #pragma omp critical(queue_lock)
                 while (!queue.empty()) {
                     Node n = queue.pop();
+                    //printf("Free node id=%d\n", n->tour[n->length - 1]);
                     free(n->tour);
                     free(n);
                 }
                 flag = false;
+                will_not_work = true;
             }
 
             // Tour complete, check if it is best
@@ -194,8 +200,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 free(node);
             }
         }
-    
+
         free(tour_nodes);
+        
     }
     
     return;
