@@ -91,65 +91,78 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //printf("Alloc node id=%d\n", root->tour[root->length - 1]);
 
     // initialize priority queue
-    PriorityQueue<Node, cmp_op> queue;
-    queue.push(root);
+    // PriorityQueue<Node, cmp_op> queue;
+    // queue.push(root);
 
     (*best_tour_cost) = max_value;
     (*best_tour) = (int *) calloc(n_cities + 1, sizeof(int));
     
     int n_threads;
-    bool flag = true;
+    int n_emptied = 0;
     
     #pragma omp parallel 
     {
-        bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         //printf("Alloc tour_nodes for thread %d\n", omp_get_thread_num());
-        bool will_not_work = false;
-        n_threads = omp_get_num_threads();
+        bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
+        PriorityQueue<Node, cmp_op> private_queue;
+        bool emptied = false;
         
-        while (flag){
+        #pragma omp master
+        {
+            n_threads = omp_get_num_threads();
+            private_queue.push(root);
+        }
+            
+        while (n_emptied != n_threads) {
             Node node = NULL;
-            #pragma omp critical(queue_lock)
-            {
-                if (!queue.empty()){
-                    will_not_work = false;
-                    node = queue.pop();
-                    //printf("!!! Thread %d got the node !!!\n", omp_get_thread_num());
+            
+            if (!private_queue.empty()){
+                node = private_queue.pop();
+                if (emptied) {
+                    #pragma omp atomic
+                    n_emptied -= 1;
                 }
-                else {
-                    //printf("!!! Thread %d found the queue empty !!!\n", thread_id);
-                    will_not_work = true;
+                emptied = false;
+                printf("!!! Thread %d got the node !!!\n", omp_get_thread_num());
+            }
+            else {
+                printf("!!! Thread %d found the queue empty !!!\n", omp_get_thread_num());
+                if (!emptied) {
+                    emptied = true;
+                    #pragma omp atomic
+                    n_emptied += 1;
                 }
             }
-
+            
             int id = 0;
-            if (!will_not_work) 
+            if (!emptied) 
                 id = node->tour[node->length - 1];
 
             bool aux = false;
             #pragma omp critical(best_tour_lock)
-            if (!will_not_work)
+            if (!emptied)
                 aux = (node->lower_bound >= (*best_tour_cost));
 
             // All remaining nodes worse than best
-            if (!will_not_work && aux) {
+            if (!emptied && aux) {
                 //printf("Free node id=%d\n", node->tour[node->length - 1]);
                 free(node->tour);
                 free(node);
 
-                #pragma omp critical(queue_lock)
-                while (!queue.empty()) {
-                    Node n = queue.pop();
+                while (!private_queue.empty()) {
+                    Node n = private_queue.pop();
                     //printf("Free node id=%d\n", n->tour[n->length - 1]);
                     free(n->tour);
                     free(n);
                 }
-                flag = false;
-                will_not_work = true;
+
+                emptied = true;
+                #pragma omp atomic
+                n_emptied += 1;
             }
 
             // Tour complete, check if it is best
-            if (!will_not_work && node->length == n_cities) {
+            if (!emptied && node->length == n_cities) {
                 #pragma omp critical(best_tour_lock)
                 if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) {
                     int i;
@@ -161,13 +174,16 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
                 }
             } 
-            else if (!will_not_work) {
+            else if (!emptied) {
+                printf("Thread %d is going to check neighbours\n", omp_get_thread_num());
                 for (int i = 0; i < node->length; i++) {
                     tour_nodes[node->tour[i]] = true;
                 }
                 
+                #pragma omp for
                 for (int i = 0; i < n_cities; i++) {
-                    if (matrix[id * n_cities + i] != 0 && !tour_nodes[i]) {
+                    printf("Thread %d is checking node %d\n", omp_get_thread_num(), i);
+                    if (matrix[id * n_cities + i] >= 0.0001 && !tour_nodes[i]) {
                         double new_bound_value = newBound(cities[id], cities[i], node->lower_bound, n_cities, matrix);
 
                         bool aux_2 = false;
@@ -185,24 +201,21 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                             newNode->lower_bound = new_bound_value;
                             newNode->length = node->length + 1;
 
-                            #pragma omp critical(queue_lock)
-                            queue.push(newNode);
+                            private_queue.push(newNode);
+                            printf("Thread %d pushed node %d onto its stack\n", omp_get_thread_num(), i);
                         }
                     }
                 }
-
                 memset(tour_nodes, false, n_cities * sizeof(bool));
-
             }
 
-            if (!will_not_work) {
+            if (!emptied) {
                 free(node->tour);
                 free(node);
             }
         }
 
         free(tour_nodes);
-        
     }
     
     return;
