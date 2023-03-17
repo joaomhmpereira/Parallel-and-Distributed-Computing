@@ -122,6 +122,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         #pragma omp barrier
 
         while (there_are_nodes(nodes_in_processing, n_threads)) {
+            printf("Thread %d in\n", thread_id);
+
             Node node = nodes_in_processing[thread_id];
             if (node) {
                 printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
@@ -221,8 +223,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 nodes_in_processing[thread_id] = NULL;
 
             freed = false;
-            
+
             #pragma omp barrier
+            
+            printf("Thread %d out\n", thread_id);
         }
         
         free(tour_nodes);
