@@ -205,8 +205,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     
                     memset(tour_nodes, false, n_cities * sizeof(bool));
                 }
-                #pragma omp barrier
+
             }
+            
+            #pragma omp barrier
 
             if (node && !freed) {
                 free(node->tour);
