@@ -221,6 +221,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 nodes_in_processing[thread_id] = NULL;
 
             freed = false;
+            
+            #pragma omp barrier
         }
         
         free(tour_nodes);
