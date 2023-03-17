@@ -80,7 +80,7 @@ void update_mins(int coord, double dist, City ** cities) {
 
 bool there_are_nodes(Node * nodes_in_processing, int n_threads) {
     for (int i = 0; i < n_threads; i++) {
-        if (nodes_in_processing[i]) return true;
+        if (nodes_in_processing[i] != NULL) return true;
     }
     return false;
 }
@@ -114,24 +114,24 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
         nodes_in_processing = (Node *) calloc(n_threads, sizeof(Node));
 
-        #pragma omp master
-        {
-            nodes_in_processing[0] = root;
-            for (int i = 1; i < n_threads; i++) {
-                nodes_in_processing[i] = NULL;
-            }
+        nodes_in_processing[0] = root;
+        for (int i = 1; i < n_threads; i++) {
+            nodes_in_processing[i] = NULL;
         }
+        
+        #pragma omp barrier
 
         while (there_are_nodes(nodes_in_processing, n_threads)) {
             Node node = nodes_in_processing[thread_id];
-            
             if (node) {
+                printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
+
                 int id = node->tour[node->length - 1];
 
                 omp_set_lock(&best_tour_lock);
                 bool worse_than_best = (node->lower_bound >= (*best_tour_cost));
                 omp_unset_lock(&best_tour_lock);
-
+                
                 // all remaining nodes worse than best
                 if (worse_than_best) {
                     free(node->tour);
@@ -163,12 +163,17 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     } 
                 }
             }
-             
+            else {
+                printf("Thread %d has no node to process\n", thread_id);
+            }
+
             for (int j = 0; j < n_threads; j++) {
                 Node shared_node = nodes_in_processing[j];
 
                 if (shared_node) {
-                    for (int i = 0; i < node->length; i++) {
+                    printf("Thread %d will now process its portion of node %d\n", thread_id, shared_node->tour[shared_node->length - 1]);
+
+                    for (int i = 0; i < shared_node->length; i++) {
                         tour_nodes[shared_node->tour[i]] = true;
                     }
 
@@ -197,12 +202,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                             }
                         }
                     }
+                    
                     memset(tour_nodes, false, n_cities * sizeof(bool));
                 }
-                
+                #pragma omp barrier
             }
-
-            #pragma omp barrier
 
             if (node && !freed) {
                 free(node->tour);
