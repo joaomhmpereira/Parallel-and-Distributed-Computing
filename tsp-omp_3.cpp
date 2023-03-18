@@ -80,7 +80,7 @@ void update_mins(int coord, double dist, City ** cities) {
 
 bool there_are_nodes(Node * nodes_in_processing, int n_threads) {
     for (int i = 0; i < n_threads; i++) {
-        if (nodes_in_processing[i] != NULL) return true;
+        if (nodes_in_processing[i]) return true;
     }
     return false;
 }
@@ -102,17 +102,17 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     omp_init_lock(&best_tour_lock);
     
     int n_threads;    
-    Node * nodes_in_processing;
+    Node * nodes_in_processing =  (Node *) calloc(4, sizeof(Node));
+    bool thereAreNodes = true;
     
-    #pragma omp parallel 
+    //comecam aqui 4 threads
+    #pragma omp parallel shared(nodes_in_processing, thereAreNodes)
     {
         bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         const int thread_id = omp_get_thread_num();
         PriorityQueue<Node, cmp_op> private_queue;
         n_threads = omp_get_num_threads(); 
         bool freed = false;
-
-        nodes_in_processing = (Node *) calloc(n_threads, sizeof(Node));
 
         nodes_in_processing[0] = root;
         for (int i = 1; i < n_threads; i++) {
@@ -121,12 +121,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         
         #pragma omp barrier
 
-        while (there_are_nodes(nodes_in_processing, n_threads)) {
-            printf("Thread %d in\n", thread_id);
+        while (thereAreNodes) {
+            //printf("Thread %d in\n", thread_id);
 
             Node node = nodes_in_processing[thread_id];
             if (node) {
-                printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
+                //printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
 
                 int id = node->tour[node->length - 1];
 
@@ -165,15 +165,14 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     } 
                 }
             }
-            else {
-                printf("Thread %d has no node to process\n", thread_id);
-            }
+
+            #pragma omp barrier 
 
             for (int j = 0; j < n_threads; j++) {
                 Node shared_node = nodes_in_processing[j];
 
                 if (shared_node) {
-                    printf("Thread %d will now process its portion of node %d\n", thread_id, shared_node->tour[shared_node->length - 1]);
+                    //printf("Thread %d will now process its portion of node %d\n", thread_id, shared_node->tour[shared_node->length - 1]);
 
                     for (int i = 0; i < shared_node->length; i++) {
                         tour_nodes[shared_node->tour[i]] = true;
@@ -223,11 +222,16 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 nodes_in_processing[thread_id] = NULL;
 
             freed = false;
-
-            #pragma omp barrier
             
-            printf("Thread %d out\n", thread_id);
+            //printf("Thread %d out\n", thread_id);
+
+            #pragma omp master
+            {
+                thereAreNodes = there_are_nodes(nodes_in_processing, n_threads);
+            }
+            #pragma omp barrier
         }
+        //printf("Thread %d finished, no more nodes\n", thread_id);
         
         free(tour_nodes);
         
