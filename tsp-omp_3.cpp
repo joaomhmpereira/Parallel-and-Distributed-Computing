@@ -224,7 +224,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             freed = false;
             
             //printf("Thread %d out\n", thread_id);
-
+            #pragma omp barrier
             #pragma omp master
             {
                 thereAreNodes = there_are_nodes(nodes_in_processing, n_threads);
@@ -234,7 +234,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         //printf("Thread %d finished, no more nodes\n", thread_id);
         
         free(tour_nodes);
-        
     }
     
     free(nodes_in_processing);
