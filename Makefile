@@ -8,7 +8,7 @@ tsp:
 	$(CXX) tsp.cpp -o tsp $(CFLAGS)
 
 tsp-omp:
-	$(CXX) tsp-omp_3.cpp -o tsp-omp $(CFLAGS)
+	$(CXX) tsp-omp_4.cpp -o tsp-omp $(CFLAGS)
 
 clean:
 	$(RM) tsp-omp tsp

@@ -174,6 +174,22 @@ class PriorityQueue
 		{
 			_buffer.clear();
 		}
+
+		void swap(std::vector<T> half)
+		{
+			_buffer.swap(half);
+		}
+
+		std::vector<T> get_half()
+		{
+			std::vector<T> half;
+			half.reserve(int(_buffer.size() / 2));
+
+			for (int n = 0; n < _buffer.size() / 2; ++n)
+            	half.push_back(_buffer[n]);
+
+			return half;
+		}
 		
 		// Print the contents of the queue. Note that you can use any callable object as parameter,
 		// including lambdas, std::function, structs with the operator(), etc.
