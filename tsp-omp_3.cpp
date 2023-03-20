@@ -99,20 +99,28 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     (*best_tour) = (int *) calloc(n_cities + 1, sizeof(int));
     
     omp_lock_t best_tour_lock;
+    omp_lock_t * queue_locks;
+    
     omp_init_lock(&best_tour_lock);
+    PriorityQueue<Node, cmp_op> * queue_array;
     
     int n_threads;    
     Node * nodes_in_processing =  (Node *) calloc(4, sizeof(Node));
     bool thereAreNodes = true;
     
     //comecam aqui 4 threads
-    #pragma omp parallel shared(nodes_in_processing, thereAreNodes)
+    #pragma omp parallel shared(nodes_in_processing, thereAreNodes, queue_locks, queue_array)
     {
         bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         const int thread_id = omp_get_thread_num();
-        PriorityQueue<Node, cmp_op> private_queue;
         n_threads = omp_get_num_threads(); 
         bool freed = false;
+        
+        queue_array = (PriorityQueue<Node, cmp_op> *) calloc(n_threads, sizeof(PriorityQueue<Node, cmp_op>));
+        queue_locks = (omp_lock_t *) calloc(n_threads, sizeof(omp_lock_t));
+        for (int l = 0; l < n_threads; l++) {
+            omp_init_lock(&queue_locks[l]);
+        }
 
         nodes_in_processing[0] = root;
         for (int i = 1; i < n_threads; i++) {
@@ -140,12 +148,13 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(node);
 
                     nodes_in_processing[thread_id] = NULL;
-
-                    while (!private_queue.empty()) {
-                        Node n = private_queue.pop();
+                    omp_set_lock(&queue_locks[thread_id]);
+                    while (!queue_array[thread_id].empty()) {
+                        Node n = queue_array[thread_id].pop();
                         free(n->tour);
                         free(n);
                     }
+                    omp_unset_lock(&queue_locks[thread_id]);
                     freed = true;
                 }
                 else {
@@ -198,8 +207,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                                 newNode->cost = shared_node->cost + matrix[id * n_cities + i];
                                 newNode->lower_bound = new_bound_value;
                                 newNode->length = shared_node->length + 1;
-
-                                private_queue.push(newNode);
+                                
+                                int random_index = rand() % 4;
+                                omp_set_lock(&queue_locks[random_index]);
+                                //printf("storing in index %d\n", random_index);
+                                queue_array[random_index].push(newNode);
+                                omp_unset_lock(&queue_locks[random_index]);
                             }
                         }
                     }
@@ -215,17 +228,18 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 free(node->tour);
                 free(node);
             }
-            
-            if (!private_queue.empty())
-                nodes_in_processing[thread_id] = private_queue.pop();
+            omp_set_lock(&queue_locks[thread_id]);
+            if (!queue_array[thread_id].empty())
+                nodes_in_processing[thread_id] = queue_array[thread_id].pop();
             else
                 nodes_in_processing[thread_id] = NULL;
+            omp_unset_lock(&queue_locks[thread_id]);
 
             freed = false;
             
             //printf("Thread %d out\n", thread_id);
             #pragma omp barrier
-            #pragma omp master
+            #pragma omp single
             {
                 thereAreNodes = there_are_nodes(nodes_in_processing, n_threads);
             }
@@ -311,6 +325,8 @@ int main(int argc, char *argv[]) {
         cerr << "Usage: tsp <input_file> <max-value>\n";
         return 1;
     }
+
+    srand (time(NULL)); // initialize random seed
 
     readInputFile(argv[1], &n_cities, &n_roads, &matrix, &cities);
 
