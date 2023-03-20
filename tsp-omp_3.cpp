@@ -135,7 +135,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             Node node = nodes_in_processing[thread_id];
             if (node) {
                 //printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
-
+		for(int y=0; y < n_threads; y++){
+			omp_set_lock(&queue_locks[y]);
+			printf("Queue %d size -> %d\n", y, queue_array[y].size());
+			omp_unset_lock(&queue_locks[y]);
+		}	
                 int id = node->tour[node->length - 1];
 
                 omp_set_lock(&best_tour_lock);
@@ -208,7 +212,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                                 newNode->lower_bound = new_bound_value;
                                 newNode->length = shared_node->length + 1;
                                 
-                                int random_index = rand() % 4;
+                                int random_index = rand() % n_threads;
                                 omp_set_lock(&queue_locks[random_index]);
                                 //printf("storing in index %d\n", random_index);
                                 queue_array[random_index].push(newNode);
