@@ -187,6 +187,17 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         tour_nodes[shared_node->tour[i]] = true;
                     }
 
+                    int index = 0;
+                    int max_size = queue_array[0].size();
+                    for (int t = 1; t < n_threads; t++){
+                        omp_set_lock(&queue_locks[t]);
+                        if (queue_array[t].size() > max_size) {
+                            max_size = queue_array[t].size();
+                            index = t;
+                        }
+                        omp_unset_lock(&queue_locks[t]);
+                    }
+
                     int id = shared_node->tour[shared_node->length - 1];
                     #pragma omp for
                     for (int i = 0; i < n_cities; i++) {
@@ -207,17 +218,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                                 newNode->cost = shared_node->cost + matrix[id * n_cities + i];
                                 newNode->lower_bound = new_bound_value;
                                 newNode->length = shared_node->length + 1;
-                                
-                                int index = 0;
-                                int max_size = queue_array[0].size();
-                                for (int t = 1; t < n_threads; t++){
-                                    omp_set_lock(&queue_locks[t]);
-                                    if (queue_array[t].size() > max_size) {
-                                        max_size = queue_array[t].size();
-                                        index = t;
-                                    }
-                                    omp_unset_lock(&queue_locks[t]);
-                                }
 
                                 omp_set_lock(&queue_locks[index]);
                                 //printf("storing in index %d\n", index);
