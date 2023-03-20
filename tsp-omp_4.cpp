@@ -217,13 +217,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (!queue_array[thread_id].empty()) {
                 Node node = queue_array[thread_id].pop();
 
-                // if (free_queue == thread_id) {
-                //     free_queue = -1;
-                // }
-                // else {
-                //     queue_array[free_queue].swap(queue_array[thread_id].get_half());
-                // }
-
                 int id = node->tour[node->length - 1];
 
                 bool worse_than_best = (node->lower_bound >= array_best_tour_cost[thread_id]);

@@ -95,6 +95,11 @@ class PriorityQueue
 		{
 			return _buffer.size();
 		}
+
+		std::vector<T>& get_buffer()
+		{
+			return _buffer;
+		}
 		
 		// Return a raw pointer to contents of the queue
 		T* data()
@@ -175,20 +180,16 @@ class PriorityQueue
 			_buffer.clear();
 		}
 
-		void swap(std::vector<T> half)
+		void transferHalf(std::vector<T>& dest)
 		{
-			_buffer.swap(half);
-		}
+			// Calculate the midpoint index
+			int midpoint = _buffer.size() / 2;
 
-		std::vector<T> get_half()
-		{
-			std::vector<T> half;
-			half.reserve(int(_buffer.size() / 2));
+			// Transfer elements from _buffer to dest
+			dest.insert(dest.end(), _buffer.begin() + midpoint, _buffer.end());
 
-			for (int n = 0; n < _buffer.size() / 2; ++n)
-            	half.push_back(_buffer[n]);
-
-			return half;
+			// Erase transferred elements from _buffer
+			_buffer.erase(_buffer.begin() + midpoint, _buffer.end());
 		}
 		
 		// Print the contents of the queue. Note that you can use any callable object as parameter,
