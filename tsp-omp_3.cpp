@@ -201,14 +201,14 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(node);
 
                     nodes_in_processing[thread_id] = NULL;
-                    omp_set_lock(&queue_locks[thread_id]);
+                    //omp_set_lock(&queue_locks[thread_id]);
                     while (!queue_array[thread_id].empty()) {
                         Node n = queue_array[thread_id].pop();
                         //printf("Thread %d is freeing node %d level %d\n", thread_id, n->tour[n->length - 1], n->length);
                         free(n->tour);
                         free(n);
                     }
-                    omp_unset_lock(&queue_locks[thread_id]);
+                    //omp_unset_lock(&queue_locks[thread_id]);
                     freed = true;
                 }
                 else {
@@ -258,11 +258,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                                 newNode->lower_bound = new_bound_value;
                                 newNode->length = shared_node->length + 1;
                                 //printf("Thread %d is storing node %d level %d\n", thread_id, newNode->tour[newNode->length - 1], newNode->length);
-                                int random_index = rand() % n_threads;
-                                omp_set_lock(&queue_locks[random_index]);
+                                //int random_index = rand() % n_threads;
+                                //omp_set_lock(&queue_locks[random_index]);
                                 //printf("storing in index %d\n", random_index);
-                                queue_array[random_index].push(newNode);
-                                omp_unset_lock(&queue_locks[random_index]);
+                                queue_array[thread_id].push(newNode);
+                                //omp_unset_lock(&queue_locks[random_index]);
                             }
                         }
                     }
@@ -280,12 +280,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 free(node);
             }
 
-            omp_set_lock(&queue_locks[thread_id]);
+            //omp_set_lock(&queue_locks[thread_id]);
             if (!queue_array[thread_id].empty())
                 nodes_in_processing[thread_id] = queue_array[thread_id].pop();
             else
                 nodes_in_processing[thread_id] = NULL;
-            omp_unset_lock(&queue_locks[thread_id]);
+            //omp_unset_lock(&queue_locks[thread_id]);
 
             freed = false;
             
