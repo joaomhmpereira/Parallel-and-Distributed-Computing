@@ -85,6 +85,40 @@ bool there_are_nodes(Node * nodes_in_processing, int n_threads) {
     return false;
 }
 
+void merge_best_tour(double * array_best_tour_cost, int ** array_best_tour, int n_threads, int n_cities, PriorityQueue<Node, cmp_op> * queue_array) {
+    // discover best tour cost
+    double best_tour_cost = array_best_tour_cost[0];
+    int best_tour_index = 0;
+    for (int i = 1; i < n_threads; i++) {
+        if (array_best_tour_cost[i] < best_tour_cost) {
+            best_tour_cost = array_best_tour_cost[i];
+            best_tour_index = i;
+        }
+    }
+
+    // for all other threads, update best 
+    for (int i = 0; i < n_threads; i++) {
+        if (i != best_tour_index) {
+            for (int j = 0; j < n_cities + 1; j++) {
+                array_best_tour[i][j] = array_best_tour[best_tour_index][j];
+            }
+        }
+        array_best_tour_cost[i] = best_tour_cost;
+
+        Node node = queue_array[i].top();
+        bool worse_than_best = (node->lower_bound >= best_tour_cost);
+                
+        if (worse_than_best) {
+            while (!queue_array[i].empty()) {
+                Node n = queue_array[i].pop();
+                free(n->tour);
+                free(n);
+            }
+        }
+    }
+}
+
+
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities){
     Node root = (Node) calloc(1, sizeof(struct node));
 
@@ -107,21 +141,35 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int n_threads;    
     Node * nodes_in_processing =  (Node *) calloc(4, sizeof(Node));
     bool thereAreNodes = true;
+
+    double * array_best_tour_cost;
+    int ** array_best_tour;
     
     //comecam aqui 4 threads
-    #pragma omp parallel shared(nodes_in_processing, thereAreNodes, queue_locks, queue_array)
+    #pragma omp parallel shared(nodes_in_processing, thereAreNodes, queue_locks, queue_array, array_best_tour_cost, array_best_tour, best_tour_cost)
     {
         bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         const int thread_id = omp_get_thread_num();
         n_threads = omp_get_num_threads(); 
         bool freed = false;
-        
-        queue_array = (PriorityQueue<Node, cmp_op> *) calloc(n_threads, sizeof(PriorityQueue<Node, cmp_op>));
-        queue_locks = (omp_lock_t *) calloc(n_threads, sizeof(omp_lock_t));
-        for (int l = 0; l < n_threads; l++) {
-            omp_init_lock(&queue_locks[l]);
-        }
+        int iterations = 0;
 
+        #pragma omp single
+        {
+            array_best_tour_cost = (double *) calloc(n_threads, sizeof(double));
+            array_best_tour = (int **) calloc(n_threads, sizeof(int *));
+            for (int i = 0; i < n_threads; i++) {
+                array_best_tour_cost[i] = max_value;
+                array_best_tour[i] = (int *) calloc(n_cities + 1, sizeof(int));
+            }
+
+            queue_array = (PriorityQueue<Node, cmp_op> *) calloc(n_threads, sizeof(PriorityQueue<Node, cmp_op>));
+            queue_locks = (omp_lock_t *) calloc(n_threads, sizeof(omp_lock_t));
+            for (int l = 0; l < n_threads; l++) {
+                omp_init_lock(&queue_locks[l]);
+            }
+        }
+        
         nodes_in_processing[0] = root;
         for (int i = 1; i < n_threads; i++) {
             nodes_in_processing[i] = NULL;
@@ -131,19 +179,24 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
         while (thereAreNodes) {
             //printf("Thread %d in\n", thread_id);
-
+            #pragma omp single
+            {
+                iterations++;
+                if (iterations % 100 == 0) {
+                    merge_best_tour(array_best_tour_cost, array_best_tour, n_threads, n_cities, queue_array);
+                }   
+            }
             Node node = nodes_in_processing[thread_id];
             if (node) {
                 //printf("Thread %d is processing node %d\n", thread_id, node->tour[node->length - 1]);
 			
                 int id = node->tour[node->length - 1];
 
-                omp_set_lock(&best_tour_lock);
-                bool worse_than_best = (node->lower_bound >= (*best_tour_cost));
-                omp_unset_lock(&best_tour_lock);
+                bool worse_than_best = (node->lower_bound >= array_best_tour_cost[thread_id]);
                 
                 // all remaining nodes worse than best
                 if (worse_than_best) {
+                    //printf("Thread %d is freeing node %d level %d\n", thread_id, node->tour[node->length - 1], node->length);
                     free(node->tour);
                     free(node);
 
@@ -151,6 +204,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     omp_set_lock(&queue_locks[thread_id]);
                     while (!queue_array[thread_id].empty()) {
                         Node n = queue_array[thread_id].pop();
+                        //printf("Thread %d is freeing node %d level %d\n", thread_id, n->tour[n->length - 1], n->length);
                         free(n->tour);
                         free(n);
                     }
@@ -160,17 +214,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 else {
                     // Tour complete, check if it is best
                     if (node->length == n_cities) {
-                        omp_set_lock(&best_tour_lock);
-                        if (node->cost + matrix[id * n_cities + 0] < (*best_tour_cost) && matrix[id * n_cities + 0] >= 0.0001) {
+                        if (node->cost + matrix[id * n_cities + 0] < array_best_tour_cost[thread_id] && matrix[id * n_cities + 0] >= 0.0001) {
                             int i;
                             for (i = 0; i < n_cities; i++) {
-                                (*best_tour)[i] = node->tour[i];
+                                array_best_tour[thread_id][i] = node->tour[i];
                             }
-                            (*best_tour)[i] = 0;
+                            array_best_tour[thread_id][i] = 0;
 
-                            (*best_tour_cost) = node->cost + matrix[id * n_cities + 0];
+                            array_best_tour_cost[thread_id] = node->cost + matrix[id * n_cities + 0];
                         }
-                        omp_unset_lock(&best_tour_lock);
                     } 
                 }
             }
@@ -193,9 +245,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         if (matrix[id * n_cities + i] != 0 && !tour_nodes[i]) {
                             double new_bound_value = newBound(cities[id], cities[i], shared_node->lower_bound, n_cities, matrix);
                             
-                            omp_set_lock(&best_tour_lock);
-                            bool better_than_best = (new_bound_value <= (*best_tour_cost));
-                            omp_unset_lock(&best_tour_lock);
+                            bool better_than_best = (new_bound_value <= array_best_tour_cost[thread_id]);
 
                             if (better_than_best) {
                                 Node newNode = (Node) calloc(1, sizeof(struct node));
@@ -207,7 +257,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                                 newNode->cost = shared_node->cost + matrix[id * n_cities + i];
                                 newNode->lower_bound = new_bound_value;
                                 newNode->length = shared_node->length + 1;
-                                
+                                //printf("Thread %d is storing node %d level %d\n", thread_id, newNode->tour[newNode->length - 1], newNode->length);
                                 int random_index = rand() % n_threads;
                                 omp_set_lock(&queue_locks[random_index]);
                                 //printf("storing in index %d\n", random_index);
@@ -225,15 +275,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             #pragma omp barrier
 
             if (node && !freed) {
+                //printf("Thread %d is freeing node %d level %d\n", thread_id, node->tour[node->length - 1], node->length);
                 free(node->tour);
                 free(node);
             }
-
-            //for(int y=0; y < n_threads; y++){
-			//    omp_set_lock(&queue_locks[y]);
-			//    printf("Queue %d size -> %d\n", y, queue_array[y].size());
-			//    omp_unset_lock(&queue_locks[y]);
-		    //}
 
             omp_set_lock(&queue_locks[thread_id]);
             if (!queue_array[thread_id].empty())
@@ -253,12 +298,26 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             #pragma omp barrier
         }
         //printf("Thread %d finished, no more nodes\n", thread_id);
-        
+
         free(tour_nodes);
     }
-    
+
+    for (int i = 0; i < n_threads; i++) {
+        if (array_best_tour_cost[i] < (*best_tour_cost)) {
+            (*best_tour_cost) = array_best_tour_cost[i];
+            for (int j = 0; j < n_cities + 1; j++) {
+                (*best_tour)[j] = array_best_tour[i][j];
+            }
+        }
+        free(array_best_tour[i]);
+        omp_destroy_lock(&queue_locks[i]);
+    }
+
+    free(queue_locks);
+    free(array_best_tour);
+    free(array_best_tour_cost);
+    free(queue_array);
     free(nodes_in_processing);
-    omp_destroy_lock(&best_tour_lock);
     return;
 }
 
