@@ -299,8 +299,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 free_queue[thread_id] = true;
                 #pragma omp critical (shared_nodes_lock)
                 {
-                    queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
-                    shared_nodes[--shared_nodes_size] = NULL;
+                    if (shared_nodes_size > 0){
+                        queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
+                        shared_nodes[--shared_nodes_size] = NULL;
+                    }
                 }
             }
             
