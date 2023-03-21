@@ -203,6 +203,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         int iterations = 0;
         
         while (thereAreNodes) {
+
+            iterations++;
+            if (iterations % 100000 == 0) {
+                merge_best_tour(array_best_tour_cost, array_best_tour, thread_id, n_threads, n_cities);
+            }
+
             if (!queue_array[thread_id].empty()) {
                 Node node = queue_array[thread_id].pop();
 
@@ -214,7 +220,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         if (free_queue[thread_id]) {
                             int n_added = 0;
                             while (n_added < 4 && !queue_array[thread_id].empty()) {
-                                #pragma omp critical (shared_nodes_lock)
                                 if (shared_nodes_size < 4 * (n_threads - 1)) {
                                     shared_nodes[shared_nodes_size++] = queue_array[thread_id].pop();
                                     n_added++;
@@ -288,13 +293,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 free_queue[thread_id] = true;
-                #pragma omp critical (shared_nodes_lock)
-                {
-                    if (shared_nodes_size > 0){
-                        queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
-                        shared_nodes[--shared_nodes_size] = NULL;
-                    }
+                
+                if (shared_nodes_size > 0){
+                    queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
+                    shared_nodes[--shared_nodes_size] = NULL;
                 }
+                
             }
 
             thereAreQueueNodes = false;
