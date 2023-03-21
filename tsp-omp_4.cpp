@@ -197,9 +197,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         queue_array[i % n_threads].push(n);
     }
 
-    int free_queue = -1;
+    Node * shared_nodes = (Node *) calloc(4 * (n_threads - 1), sizeof(Node));
+    bool * free_queue = (bool *) calloc(n_threads, sizeof(bool));
     bool thereAreNodes = true;
-    #pragma omp parallel shared(thereAreNodes, queue_array, array_best_tour_cost, array_best_tour, best_tour_cost)
+    int shared_nodes_size = 0;
+    #pragma omp parallel shared(thereAreNodes, queue_array, array_best_tour_cost, array_best_tour, best_tour_cost, shared_nodes)
     {
         bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         const int thread_id = omp_get_thread_num();
@@ -216,6 +218,24 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
             if (!queue_array[thread_id].empty()) {
                 Node node = queue_array[thread_id].pop();
+
+                if (free_queue[thread_id]) {
+                    free_queue[thread_id] = false;
+                }
+                for (int i = 0; i < n_threads; i++) {
+                    if (i != thread_id) {
+                        if (free_queue[thread_id]) {
+                            int n_added = 0;
+                            while (n_added < 4 && !queue_array[thread_id].empty()) {
+                                #pragma omp critical (shared_nodes_lock)
+                                if (shared_nodes_size < 4 * (n_threads - 1)) {
+                                    shared_nodes[shared_nodes_size++] = queue_array[thread_id].pop();
+                                    n_added++;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 int id = node->tour[node->length - 1];
 
@@ -276,7 +296,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 }
             }
             else {
-                free_queue = thread_id;
+                free_queue[thread_id] = true;
+                #pragma omp critical (shared_nodes_lock)
+                {
+                    queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
+                    shared_nodes[--shared_nodes_size] = NULL;
+                }
             }
             
             #pragma omp barrier
