@@ -193,12 +193,13 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
     Node * shared_nodes = (Node *) calloc(4 * (n_threads - 1), sizeof(Node));
     bool * free_queue = (bool *) calloc(n_threads, sizeof(bool));
-    bool thereAreNodes = true;
     int shared_nodes_size = 0;
-    #pragma omp parallel shared(thereAreNodes, queue_array, array_best_tour_cost, array_best_tour, best_tour_cost, shared_nodes)
+    #pragma omp parallel
     {
         bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
         const int thread_id = omp_get_thread_num();
+        bool thereAreQueueNodes = true;
+        bool thereAreNodes = true;
         int iterations = 0;
         
         while (thereAreNodes) {
@@ -295,12 +296,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     }
                 }
             }
-            
-            #pragma omp barrier
-            #pragma omp single
-            {
-                thereAreNodes = there_are_nodes(queue_array, n_threads);
+
+            thereAreQueueNodes = false;
+            for (int i = 0; i < n_threads; i++) {
+                if (!queue_array[i].empty()) thereAreQueueNodes = true;
             }
+            thereAreNodes = ((shared_nodes_size != 0) || thereAreQueueNodes);
         }
 
         free(tour_nodes);
