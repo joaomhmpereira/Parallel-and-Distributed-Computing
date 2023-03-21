@@ -85,20 +85,14 @@ bool there_are_nodes(PriorityQueue<Node, cmp_op> * queue_array, int n_threads) {
     return false;
 }
 
-void merge_best_tour(double * array_best_tour_cost, int ** array_best_tour, int n_threads, int n_cities, double * best_tour_cost, int ** best_tour) {
-    // discover best tour cost
-    double best_tour_cost_local = array_best_tour_cost[0];
-    int best_tour_index = 0;
-    for (int i = 1; i < n_threads; i++) {
-        if (array_best_tour_cost[i] < best_tour_cost_local) {
-            best_tour_cost_local = array_best_tour_cost[i];
-            best_tour_index = i;
-        }
-    }
-    if (best_tour_cost_local < (*best_tour_cost)) {
-        (*best_tour_cost) = best_tour_cost_local;
-        for (int i = 0; i < n_cities + 1; i++) {
-            (*best_tour)[i] = array_best_tour[best_tour_index][i];
+void merge_best_tour(double * array_best_tour_cost, int ** array_best_tour, int thread_id, int n_threads, int n_cities) {
+    double new_best = array_best_tour_cost[thread_id];
+    for (int i = 0; i < n_threads; i++) {
+        if (i != n_threads) {
+            if (array_best_tour_cost[i] > new_best) {
+                array_best_tour_cost[i] = new_best;
+                memcpy(array_best_tour[i], array_best_tour[thread_id], (n_cities + 1) * sizeof(int));
+            }
         }
     }
 }
@@ -208,14 +202,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         int iterations = 0;
         
         while (thereAreNodes) {
-            #pragma omp single
-            {
-                iterations++;
-                if (iterations % 10000 == 0) {
-                    merge_best_tour(array_best_tour_cost, array_best_tour, n_threads, n_cities, best_tour_cost, best_tour);
-                }   
-            }
-
             if (!queue_array[thread_id].empty()) {
                 Node node = queue_array[thread_id].pop();
 
@@ -259,10 +245,14 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                             int i;
                             for (i = 0; i < n_cities; i++) {
                                 array_best_tour[thread_id][i] = node->tour[i];
-                            }
+                            }                        
                             array_best_tour[thread_id][i] = 0;
 
+                            //#pragma omp critical (best_tour_lock)
                             array_best_tour_cost[thread_id] = node->cost + matrix[id * n_cities + 0];
+
+                            //#pragma omp critical (best_tour_lock)
+                            //merge_best_tour(array_best_tour_cost, array_best_tour, thread_id, n_threads, n_cities);
                         }
                     } 
                     else {
