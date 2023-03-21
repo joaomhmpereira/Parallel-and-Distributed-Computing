@@ -205,7 +205,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         while (thereAreNodes) {
 
             iterations++;
-            if (iterations % 100000 == 0) {
+            if (iterations % 500000 == 0) {
                 merge_best_tour(array_best_tour_cost, array_best_tour, thread_id, n_threads, n_cities);
             }
 
