@@ -1,3 +1,5 @@
 tsp
 tsp-omp
 tsp-mpi
+tsp-omp.dSYM
+.DS_Store

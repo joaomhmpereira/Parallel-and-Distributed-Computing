@@ -78,13 +78,6 @@ void update_mins(int coord, double dist, City ** cities) {
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-bool there_are_nodes(PriorityQueue<Node, cmp_op> * queue_array, int n_threads) {
-    for (int i = 0; i < n_threads; i++) {
-        if (!queue_array[i].empty()) return true;
-    }
-    return false;
-}
-
 void merge_best_tour(double * array_best_tour_cost, int ** array_best_tour, int thread_id, int n_threads, int n_cities) {
     double new_best = array_best_tour_cost[thread_id];
     for (int i = 0; i < n_threads; i++) {

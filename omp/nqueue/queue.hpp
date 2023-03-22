@@ -180,18 +180,6 @@ class PriorityQueue
 			_buffer.clear();
 		}
 
-		void transferHalf(std::vector<T>& dest)
-		{
-			// Calculate the midpoint index
-			int midpoint = _buffer.size() / 2;
-
-			// Transfer elements from _buffer to dest
-			dest.insert(dest.end(), _buffer.begin() + midpoint, _buffer.end());
-
-			// Erase transferred elements from _buffer
-			_buffer.erase(_buffer.begin() + midpoint, _buffer.end());
-		}
-		
 		// Print the contents of the queue. Note that you can use any callable object as parameter,
 		// including lambdas, std::function, structs with the operator(), etc.
 		//
