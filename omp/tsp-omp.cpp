@@ -81,11 +81,9 @@ void update_mins(int coord, double dist, City ** cities) {
 void merge_best_tour(double * array_best_tour_cost, int ** array_best_tour, int thread_id, int n_threads, int n_cities) {
     double new_best = array_best_tour_cost[thread_id];
     for (int i = 0; i < n_threads; i++) {
-        if (i != n_threads) {
-            if (array_best_tour_cost[i] > new_best) {
-                array_best_tour_cost[i] = new_best;
-                memcpy(array_best_tour[i], array_best_tour[thread_id], (n_cities + 1) * sizeof(int));
-            }
+        if (array_best_tour_cost[i] > new_best) {
+            array_best_tour_cost[i] = new_best;
+            memcpy(array_best_tour[i], array_best_tour[thread_id], (n_cities + 1) * sizeof(int));
         }
     }
 }
@@ -105,16 +103,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     /* init best */
     (*best_tour_cost) = max_value;
     (*best_tour) = (int *) calloc(n_cities + 1, sizeof(int));
-    
-    /* shared variables */
-    PriorityQueue<Node, cmp_op> * queue_array = (PriorityQueue<Node, cmp_op> *) calloc(n_threads, sizeof(PriorityQueue<Node, cmp_op>));
-        
-    double * array_best_tour_cost = (double *) calloc(n_threads, sizeof(double));
-    int ** array_best_tour = (int **) calloc(n_threads, sizeof(int *));
-    for (int i = 0; i < n_threads; i++) {
-        array_best_tour_cost[i] = max_value;
-        array_best_tour[i] = (int *) calloc(n_cities + 1, sizeof(int));
-    }
     
     /* SEQUENTIAL PART */
     bool * tour_nodes_init = (bool *) calloc(n_cities, sizeof(bool));
@@ -178,6 +166,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
     free(tour_nodes_init);
 
+    /* shared variables */
+    PriorityQueue<Node, cmp_op> * queue_array = (PriorityQueue<Node, cmp_op> *) calloc(n_threads, sizeof(PriorityQueue<Node, cmp_op>));
+    double * array_best_tour_cost = (double *) calloc(n_threads, sizeof(double));
+    int ** array_best_tour = (int **) calloc(n_threads, sizeof(int *));
+    for (int i = 0; i < n_threads; i++) {
+        array_best_tour_cost[i] = max_value;
+        array_best_tour[i] = (int *) calloc(n_cities + 1, sizeof(int));
+    }
+
     /* PREPARE PARALLEL PART */
     for (int i = 0; i < initial_queue.size(); i++) {
         Node n = initial_queue.pop();
@@ -213,6 +210,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         if (free_queue[thread_id]) {
                             int n_added = 0;
                             while (n_added < 4 && !queue_array[thread_id].empty()) {
+                                #pragma omp critical
                                 if (shared_nodes_size < 4 * (n_threads - 1)) {
                                     shared_nodes[shared_nodes_size++] = queue_array[thread_id].pop();
                                     n_added++;
@@ -249,7 +247,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
                             //#pragma omp critical (best_tour_lock)
                             array_best_tour_cost[thread_id] = node->cost + matrix[id * n_cities + 0];
-
                             //#pragma omp critical (best_tour_lock)
                             //merge_best_tour(array_best_tour_cost, array_best_tour, thread_id, n_threads, n_cities);
                         }
@@ -287,6 +284,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             else {
                 free_queue[thread_id] = true;
                 
+                #pragma omp critical
                 if (shared_nodes_size > 0){
                     queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
                     shared_nodes[--shared_nodes_size] = NULL;
@@ -303,7 +301,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
         free(tour_nodes);
     }
-
+    
     for (int i = 0; i < n_threads; i++) {
         if (array_best_tour_cost[i] < (*best_tour_cost)) {
             (*best_tour_cost) = array_best_tour_cost[i];
