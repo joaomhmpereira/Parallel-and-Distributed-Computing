@@ -181,7 +181,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         queue_array[i % n_threads].push(n);
     }
 
-    Node * shared_nodes = (Node *) calloc(4 * (n_threads - 1), sizeof(Node));
+    Node * shared_nodes = (Node *) calloc(n_threads * (n_threads - 1), sizeof(Node));
     bool * free_queue = (bool *) calloc(n_threads, sizeof(bool));
     int shared_nodes_size = 0;
     #pragma omp parallel
@@ -209,9 +209,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     if (i != thread_id) {
                         if (free_queue[thread_id]) {
                             int n_added = 0;
-                            while (n_added < 4 && !queue_array[thread_id].empty()) {
-                                #pragma omp critical
-                                if (shared_nodes_size < 4 * (n_threads - 1)) {
+                            while (n_added < n_threads && !queue_array[thread_id].empty()) {
+                                if (shared_nodes_size < n_threads * (n_threads - 1)) {
                                     shared_nodes[shared_nodes_size++] = queue_array[thread_id].pop();
                                     n_added++;
                                 }
@@ -284,7 +283,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             else {
                 free_queue[thread_id] = true;
                 
-                #pragma omp critical
                 if (shared_nodes_size > 0){
                     queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
                     shared_nodes[--shared_nodes_size] = NULL;
@@ -312,6 +310,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         free(array_best_tour[i]);
     }
 
+    free(shared_nodes);
+    free(free_queue);
     free(array_best_tour);
     free(array_best_tour_cost);
     free(queue_array);
