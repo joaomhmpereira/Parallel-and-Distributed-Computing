@@ -283,10 +283,13 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             else {
                 free_queue[thread_id] = true;
                 
-                if (shared_nodes_size > 0){
+                int n_removed = 0;
+                while (n_removed < n_threads && shared_nodes_size > 0) {
                     queue_array[thread_id].push(shared_nodes[shared_nodes_size - 1]);
                     shared_nodes[--shared_nodes_size] = NULL;
+                    n_removed++;
                 }
+                
                 
             }
 
