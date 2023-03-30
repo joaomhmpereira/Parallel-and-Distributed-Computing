@@ -175,9 +175,31 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             free(node);
         }
         free(tour_nodes_init);
+        
+        char ** buffer = (char **) calloc(n_tasks*n_tasks, sizeof(char *));
+        for (int i = 0; i < n_tasks*n_tasks; i++){
+            Node node = initial_queue.pop();
+            int length = node->length;
+            buffer[i] = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+            memcpy(buffer[i], &node->cost, sizeof(double));
+            memcpy(buffer[i] + sizeof(double), &node->lower_bound, sizeof(double));
+            memcpy(buffer[i] + sizeof(double)*2, &length, sizeof(int));
+            memcpy(buffer[i] + sizeof(double)*2 + sizeof(int), node->tour, sizeof(int)*length);
+        }
+
+        for (int i = 1; i < n_tasks*n_tasks ; i++){
+            MPI_Send(buffer[i], sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_CHAR, i % n_tasks, 0, MPI_COMM_WORLD);
+        }
+    }
+
+    for (int received = 0; received < n_tasks; received++){
+        MPI_Recv(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
     }
 
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
+
+
     
     // todos a trabalhar em paralelo
     while (!queue.empty()){
