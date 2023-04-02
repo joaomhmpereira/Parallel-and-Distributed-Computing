@@ -172,7 +172,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         }
         free(node->tour);
         free(node);
-    }
+    }  
+
+    free(tour_nodes_init);
 
     if (initial_queue.empty()) return;
 
@@ -189,8 +191,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         }
         i++;
     }
-    
-    free(tour_nodes_init);
 
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
 
