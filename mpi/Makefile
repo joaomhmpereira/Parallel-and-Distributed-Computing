@@ -8,4 +8,4 @@ tsp:
 	$(CXX) tsp-mpi.cpp -o tsp-mpi $(CFLAGS)
 
 clean:
-	$(RM) tsp
+	$(RM) tsp-mpi
