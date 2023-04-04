@@ -12,8 +12,12 @@
 
 using namespace std;
 
+
 #define COST_TAG 1
 #define TOUR_TAG 2
+#define WHITE 3
+#define BLACK 4
+#define TOKEN_TAG 5
 
 /* STRUCTURES */
 
@@ -101,6 +105,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     char *placeholder_buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*n_cities);
     bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
     
+    /* RING TERMINATION */
+    int color = BLACK;
+    int token = BLACK;
+    int next_rank = (id + 1) % n_tasks;
+    int prev_rank = (id + n_tasks - 1) % n_tasks;
     //printf("[TASK %d] Executing sequential part...\n", id);
     /* init root */
     Node root = (Node) calloc(1, sizeof(struct node));
@@ -174,7 +183,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         free(node);
     }  
 
-    free(tour_nodes_init);
+    //free(tour_nodes_init);
 
     if (initial_queue.empty()) return;
 
@@ -196,74 +205,101 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int iterations = 0;
     double min_cost;
     // todos a trabalhar em paralelo
-    while (!queue.empty()){
+    while (1){
         iterations++;
 
         if (iterations % 500000 == 0) {
             MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            color = BLACK;
             if (min_cost < (*best_tour_cost))
                 (*best_tour_cost) = min_cost;
             printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
         }
 
-        Node node = queue.pop();
-        int node_id = node->tour[node->length - 1];
+        if (!queue.empty()) {
+            Node node = queue.pop();
+            int node_id = node->tour[node->length - 1];
 
-        // All remaining nodes worse than best
-        if (node->lower_bound >= (*best_tour_cost)) {
+            // All remaining nodes worse than best
+            if (node->lower_bound >= (*best_tour_cost)) {
+                free(node->tour);
+                free(node);
+                while (!queue.empty()) {
+                    Node n = queue.pop();
+                    free(n->tour);
+                    free(n);
+                }
+                free(tour_nodes);
+                break;
+            }
+
+            // Tour complete, check if it is best
+            if (node->length == n_cities) {
+                if (node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
+                    int i;
+                    for (i = 0; i < n_cities; i++) {
+                        (*best_tour)[i] = node->tour[i];
+                    }
+                    (*best_tour)[i] = 0;
+
+                    (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
+                }
+            } 
+            else {
+                
+                for (int i = 0; i < node->length; i++) {
+                    tour_nodes[node->tour[i]] = true;
+                }
+                
+                for (int i = 0; i < n_cities; i++) {
+                    if (matrix[node_id * n_cities + i] != 0 && !tour_nodes[i]) {
+                        double new_bound_value = newBound(cities[node_id], cities[i], node->lower_bound, n_cities, matrix);
+                        if(new_bound_value > (*best_tour_cost)) {
+                            continue;
+                        }
+                        Node newNode = (Node) calloc(1, sizeof(struct node));
+                        newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
+                        for (int j = 0; j < node->length; j++) {
+                            newNode->tour[j] = node->tour[j];
+                        }
+                        newNode->tour[node->length] = i;
+                        newNode->cost = node->cost + matrix[node_id * n_cities + i];
+                        newNode->lower_bound = new_bound_value;
+                        newNode->length = node->length + 1;
+                        queue.push(newNode);
+                    }
+                }
+
+                memset(tour_nodes, false, n_cities * sizeof(bool));
+
+            }
             free(node->tour);
             free(node);
-            while (!queue.empty()) {
-                Node n = queue.pop();
-                free(n->tour);
-                free(n);
-            }
-            free(tour_nodes);
-            break;
         }
 
-        // Tour complete, check if it is best
-        if (node->length == n_cities) {
-            if (node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
-                int i;
-                for (i = 0; i < n_cities; i++) {
-                    (*best_tour)[i] = node->tour[i];
-                }
-                (*best_tour)[i] = 0;
-
-                (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
-            }
-        } 
         else {
-            
-            for (int i = 0; i < node->length; i++) {
-                tour_nodes[node->tour[i]] = true;
+            color = WHITE;
+            if (!id) {
+                /* P0 sends a white token to P1 */
+                token = WHITE; 
+                MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
+                /* P0 is waiting for a token from P(n_tasks - 1) */
+                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                /* if P0 receives a black token, it will pass a white token */
+                if (token == BLACK) token = WHITE;
+                /* if P0 receives a white token, computation can terminate */
+                else break;
             }
-            
-            for (int i = 0; i < n_cities; i++) {
-                if (matrix[node_id * n_cities + i] != 0 && !tour_nodes[i]) {
-                    double new_bound_value = newBound(cities[node_id], cities[i], node->lower_bound, n_cities, matrix);
-                    if(new_bound_value > (*best_tour_cost)) {
-                        continue;
-                    }
-                    Node newNode = (Node) calloc(1, sizeof(struct node));
-                    newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
-                    for (int j = 0; j < node->length; j++) {
-                        newNode->tour[j] = node->tour[j];
-                    }
-                    newNode->tour[node->length] = i;
-                    newNode->cost = node->cost + matrix[node_id * n_cities + i];
-                    newNode->lower_bound = new_bound_value;
-                    newNode->length = node->length + 1;
-                    queue.push(newNode);
-                }
+            else {
+                /* when a process finishes, it waits to receive the token */
+                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                /* if the color of the process is black, it will pass a black token */
+                if (color == BLACK) token = BLACK;
+                MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
+                /* a black process becomes white when it passes the token */
+                color = WHITE;
             }
-
-            memset(tour_nodes, false, n_cities * sizeof(bool));
-
         }
-        free(node->tour);
-        free(node);
     }
 
     //free(tour_nodes);
