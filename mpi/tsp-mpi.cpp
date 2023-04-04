@@ -118,7 +118,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     bool * tour_nodes_init = (bool *) calloc(n_cities, sizeof(bool));
     PriorityQueue<Node, cmp_op> initial_queue;
     initial_queue.push(root);
-    while (initial_queue.size() < 10000 || initial_queue.empty()) {
+    while (initial_queue.size() < 100000 || initial_queue.empty()) {
         Node node = initial_queue.pop();
         int node_id = node->tour[node->length - 1];
 
@@ -145,7 +145,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 (*best_tour)[i] = 0;
                 (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
             }
-        } else {
+        } 
+        else {
             for (int i = 0; i < node->length; i++) {
                 tour_nodes_init[node->tour[i]] = true;
             }
@@ -168,7 +169,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 }
             }
             memset(tour_nodes_init, false, n_cities * sizeof(bool));
-
         }
         free(node->tour);
         free(node);
@@ -193,9 +193,19 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
 
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
-
+    int iterations = 0;
+    double min_cost;
     // todos a trabalhar em paralelo
     while (!queue.empty()){
+        iterations++;
+
+        if (iterations % 500000 == 0) {
+            MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            if (min_cost < (*best_tour_cost))
+                (*best_tour_cost) = min_cost;
+            printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
+        }
+
         Node node = queue.pop();
         int node_id = node->tour[node->length - 1];
 
@@ -223,7 +233,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
                 (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
             }
-        } else {
+        } 
+        else {
             
             for (int i = 0; i < node->length; i++) {
                 tour_nodes[node->tour[i]] = true;
@@ -256,7 +267,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
 
     //free(tour_nodes);
-    
+    // ring termination (so qd fizermos o load balancing)
+
+    /* in the end, determine the best solution */
     double best_tour_cost_neighbor;
     int best_tour_neighbor[n_cities + 1];
 
@@ -279,7 +292,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         }
     }
         
-    // ring termination (so qd fizermos o load balancing)
     // gather e dar a melhor tour (na variavel global)
     // mpi finish
     return;
