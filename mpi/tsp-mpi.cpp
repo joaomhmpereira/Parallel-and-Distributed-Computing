@@ -230,7 +230,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(n);
                 }
                 free(tour_nodes);
-                break;
+                continue;
             }
 
             // Tour complete, check if it is best
@@ -277,6 +277,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             free(node);
         }
 
+        MPI_Request request;
+        int terminate = -1;     
+        int flag;         
         else {
             fprintf(stderr, "[TASK %d] queue is empty!\n", id);
             color = WHITE;
@@ -291,7 +294,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 /* if P0 receives a black token, it will pass a white token */
                 if (token == BLACK) token = WHITE;
                 /* if P0 receives a white token, computation can terminate */
-                else break;
+                else {
+                    terminate = 0;
+                }
             }
             else {
                 /* when a process finishes, it waits to receive the token */
@@ -303,6 +308,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                 /* a black process becomes white when it passes the token */
                 color = WHITE;
+            }
+
+            if (terminate == 0 || id) {
+                MPI_Ibcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, &request);
+                MPI_Test(&request, &flag, MPI_STATUS_IGNORE);
+                if (flag) {
+                    fprintf(stderr, "[TASK %d] Received termination signal!\n", id);
+                    break;
+                }
             }
         }
     }
