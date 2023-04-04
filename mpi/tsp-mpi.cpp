@@ -110,6 +110,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int token = BLACK;
     int next_rank = (id + 1) % n_tasks;
     int prev_rank = (id + n_tasks - 1) % n_tasks;
+    MPI_Request request;
+    int terminate = -1;     
+    int flag;
+
     //printf("[TASK %d] Executing sequential part...\n", id);
     /* init root */
     Node root = (Node) calloc(1, sizeof(struct node));
@@ -275,11 +279,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             free(node->tour);
             free(node);
-        }
-
-        MPI_Request request;
-        int terminate = -1;     
-        int flag;         
+        }         
         else {
             fprintf(stderr, "[TASK %d] queue is empty!\n", id);
             color = WHITE;
