@@ -210,15 +210,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double min_cost;
     // todos a trabalhar em paralelo
     while (1){
-        //iterations++;
+        iterations++;
 
-        // if (iterations % 500000 == 0 ) {
-        //     MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-        //     color = BLACK;
-        //     if (min_cost < (*best_tour_cost))
-        //         (*best_tour_cost) = min_cost;
-        //     printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
-        // }
+        if (iterations % 500000 == 0 ) {
+            MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            color = BLACK;
+            if (min_cost < (*best_tour_cost))
+                (*best_tour_cost) = min_cost;
+            printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
+        }
 
         if (!queue.empty()) {
             Node node = queue.pop();
