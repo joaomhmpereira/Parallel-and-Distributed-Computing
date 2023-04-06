@@ -18,6 +18,7 @@ using namespace std;
 #define WHITE 3
 #define BLACK 4
 #define TOKEN_TAG 5
+#define IDLE_TAG 6
 
 /* STRUCTURES */
 
@@ -110,9 +111,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int token = BLACK;
     int next_rank = (id + 1) % n_tasks;
     int prev_rank = (id + n_tasks - 1) % n_tasks;
-    MPI_Request request_broadcast, request_receive;
+    MPI_Request request_broadcast, request_receive, request_allreduce;
     int terminate = -1;     
-    int flag;
+    int flag, flag2;
+    int empty_queue = 2;
 
     //printf("[TASK %d] Executing sequential part...\n", id);
     /* init root */
@@ -208,16 +210,36 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
     int iterations = 0;
     double min_cost;
+    bool idle_processes[n_tasks] = {false};
+    int num_idle_processes = 0;
+    bool broadcasted = false, reduced = false;
+    MPI_Status bcast_status;
+    
     // todos a trabalhar em paralelo
     while (1){
         iterations++;
 
         if (iterations % 500000 == 0 ) {
-            MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            //fprintf(stderr, "[TASK %d] ... reducing ... \n", id);
+            MPI_Iallreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &request_allreduce);
+            reduced = true;
+            //fprintf(stderr, "[TASK %d] !!! already reduced !!! \n", id);
+            
             color = BLACK;
-            if (min_cost < (*best_tour_cost))
-                (*best_tour_cost) = min_cost;
-            printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
+            //fprintf(stderr, "[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
+        
+        } 
+        
+        if (reduced && iterations % 50000 == 0){
+            MPI_Test(&request_allreduce, &flag2, MPI_STATUS_IGNORE);
+            if (flag2){
+                fprintf(stderr, "[TASK %d] got a result from the reduce \n", id);
+                if (min_cost < (*best_tour_cost)){
+                    (*best_tour_cost) = min_cost;
+                    fprintf(stderr, "[TASK %d] !!! best tour cost updated !!! \n", id);
+                }
+                reduced = false;
+            }
         }
 
         if (!queue.empty()) {
@@ -281,19 +303,48 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             free(node);
         }         
         else {
-            fprintf(stderr, "[TASK %d] queue is empty!\n", id);
+            if (!broadcasted) {
+                //MPI_Ibcast(&empty_queue, 1, MPI_INT, id, MPI_COMM_WORLD, &request_broadcast);
+                for (int i = 0; i < n_tasks; i++) {
+                    if (i != id) {
+                        MPI_Isend(&empty_queue, 1, MPI_INT, i, IDLE_TAG, MPI_COMM_WORLD, &request_broadcast);
+                    }
+                }
+                broadcasted = true;
+                num_idle_processes++;
+                idle_processes[id] = true;
+                fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
+            }
+            
+            //MPI_Test(&request_broadcast, &flag, &bcast_status);
+            // MPI_Iprobe checks if there are any messages with IDLE_TAG ready to be received
+            MPI_Iprobe(MPI_ANY_SOURCE, IDLE_TAG, MPI_COMM_WORLD, &flag, &bcast_status);
+            if (flag) {
+                int source = bcast_status.MPI_SOURCE;
+                MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                idle_processes[source] = true;
+                num_idle_processes++;
+                fprintf(stderr, "[TASK %d] Received broadcast from %d, Idle: %d\n", id, source, num_idle_processes);
+            }
+            //flag = 0;
+        }
+        
+        //fprintf(stderr, "[TASK %d] Num idle processes before checking: %d\n", id, num_idle_processes);
+
+        if (num_idle_processes == n_tasks) {
+            fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
             color = WHITE;
             if (!id) {
                 /* P0 sends a white token to P1 */
                 token = WHITE; 
-                fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
+                //fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
                 MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                 /* P0 is waiting for a token from P(n_tasks - 1) */
                 MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 flag = 1;
                 if (flag) {
-                    fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
+                    //fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
                     /* if P0 receives a black token, it will pass a white token */
                     if (token == BLACK) token = WHITE;
                     /* if P0 receives a white token, computation can terminate */
@@ -304,14 +355,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 /* when a process finishes, it waits to receive the token */
+                fprintf(stderr, "[TASK %d] Waiting for token...\n", id);
                 MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 flag = 1;
                 if (flag) {
-                    fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
+                    //fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
                     /* if the color of the process is black, it will pass a black token */
                     if (color == BLACK) token = BLACK;
-                    fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
+                    //fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
                     MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                     /* a black process becomes white when it passes the token */
                     color = WHITE;
@@ -319,7 +371,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
 
             if (terminate == 0 || id) {
-                fprintf(stderr, "[TASK %d] BEFORE ASYNC BROADCAST\n", id);
                 MPI_Bcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD);
                 break;
                 // MPI_Test(&request_broadcast, &flag, MPI_STATUS_IGNORE);
