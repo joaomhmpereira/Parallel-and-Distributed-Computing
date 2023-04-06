@@ -210,15 +210,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double min_cost;
     // todos a trabalhar em paralelo
     while (1){
-        iterations++;
+        //iterations++;
 
-        if (iterations % 500000 == 0 ) {
-            MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-            color = BLACK;
-            if (min_cost < (*best_tour_cost))
-                (*best_tour_cost) = min_cost;
-            printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
-        }
+        // if (iterations % 500000 == 0 ) {
+        //     MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+        //     color = BLACK;
+        //     if (min_cost < (*best_tour_cost))
+        //         (*best_tour_cost) = min_cost;
+        //     printf("[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
+        // }
 
         if (!queue.empty()) {
             Node node = queue.pop();
@@ -289,8 +289,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
                 MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                 /* P0 is waiting for a token from P(n_tasks - 1) */
-                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, &request_receive);
-                MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
+                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
+                flag = 1;
                 if (flag) {
                     fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
                     /* if P0 receives a black token, it will pass a white token */
@@ -303,8 +304,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 /* when a process finishes, it waits to receive the token */
-                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, &request_receive);
-                MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
+                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
+                flag = 1;
                 if (flag) {
                     fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
                     /* if the color of the process is black, it will pass a black token */
