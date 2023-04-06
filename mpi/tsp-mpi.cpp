@@ -208,11 +208,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
     int iterations = 0;
     double min_cost;
+    bool finished = false;
     // todos a trabalhar em paralelo
     while (1){
         iterations++;
 
-        if (iterations % 500000 == 0) {
+        if (iterations % 500000 == 0 ) {
             MPI_Allreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
             color = BLACK;
             if (min_cost < (*best_tour_cost))
@@ -298,7 +299,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     terminate = 0;
                 }
             }
-            else {
+            else if (!finished) {
                 /* when a process finishes, it waits to receive the token */
                 MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
@@ -311,6 +312,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
 
             if (terminate == 0 || id) {
+                finished = true;
                 fprintf(stderr, "[TASK %d] BEFORE ASYNC BROADCAST\n", id);
                 MPI_Ibcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, &request);
                 MPI_Test(&request, &flag, MPI_STATUS_IGNORE);
