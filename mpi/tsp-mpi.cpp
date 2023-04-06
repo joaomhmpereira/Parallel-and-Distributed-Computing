@@ -110,7 +110,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int token = BLACK;
     int next_rank = (id + 1) % n_tasks;
     int prev_rank = (id + n_tasks - 1) % n_tasks;
-    MPI_Request request;
+    MPI_Request request_broadcast, request_receive;
     int terminate = -1;     
     int flag;
 
@@ -208,7 +208,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
     int iterations = 0;
     double min_cost;
-    bool finished = false;
     // todos a trabalhar em paralelo
     while (1){
         iterations++;
@@ -290,7 +289,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
                 MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                 /* P0 is waiting for a token from P(n_tasks - 1) */
-                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &request);
                 fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
                 /* if P0 receives a black token, it will pass a white token */
                 if (token == BLACK) token = WHITE;
@@ -299,23 +298,25 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     terminate = 0;
                 }
             }
-            else if (!finished) {
+            else {
                 /* when a process finishes, it waits to receive the token */
-                MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
-                /* if the color of the process is black, it will pass a black token */
-                if (color == BLACK) token = BLACK;
-                fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
-                MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
-                /* a black process becomes white when it passes the token */
-                color = WHITE;
+                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &request_receive);
+                MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
+                if (flag) {
+                    fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
+                    /* if the color of the process is black, it will pass a black token */
+                    if (color == BLACK) token = BLACK;
+                    fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
+                    MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
+                    /* a black process becomes white when it passes the token */
+                    color = WHITE;
+                }
             }
 
             if (terminate == 0 || id) {
-                finished = true;
                 fprintf(stderr, "[TASK %d] BEFORE ASYNC BROADCAST\n", id);
-                MPI_Ibcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, &request);
-                MPI_Test(&request, &flag, MPI_STATUS_IGNORE);
+                MPI_Ibcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, &request_broadcast);
+                MPI_Test(&request_broadcast, &flag, MPI_STATUS_IGNORE);
                 fprintf(stderr, "[TASK %d] ::: broadcast flag ::: -> %d\n", id, flag);
                 if (flag) {
                     fprintf(stderr, "[TASK %d] Received termination signal!\n", id);
