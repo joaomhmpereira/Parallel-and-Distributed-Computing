@@ -289,7 +289,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 fprintf(stderr, "[TASK %d] Sending token to %d : token color -> %d \n", id, next_rank, token);
                 MPI_Send(&token, 1, MPI_INT, next_rank, TOKEN_TAG, MPI_COMM_WORLD);
                 /* P0 is waiting for a token from P(n_tasks - 1) */
-                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &request_receive);
+                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, &request_receive);
                 MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 if (flag) {
                     fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
@@ -303,7 +303,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 /* when a process finishes, it waits to receive the token */
-                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &request_receive);
+                MPI_Irecv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, &request_receive);
                 MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 if (flag) {
                     fprintf(stderr, "[TASK %d] Received token from %d : token color -> %d \n", id, prev_rank, token);
