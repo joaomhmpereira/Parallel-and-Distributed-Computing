@@ -320,13 +320,14 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
             if (terminate == 0 || id) {
                 fprintf(stderr, "[TASK %d] BEFORE ASYNC BROADCAST\n", id);
-                MPI_Ibcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, &request_broadcast);
-                MPI_Test(&request_broadcast, &flag, MPI_STATUS_IGNORE);
-                fprintf(stderr, "[TASK %d] ::: broadcast flag ::: -> %d\n", id, flag);
-                if (flag) {
-                    fprintf(stderr, "[TASK %d] Received termination signal!\n", id);
-                    break;
-                }
+                MPI_Bcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                break;
+                // MPI_Test(&request_broadcast, &flag, MPI_STATUS_IGNORE);
+                // fprintf(stderr, "[TASK %d] ::: broadcast flag ::: -> %d\n", id, flag);
+                // if (flag) {
+                //     fprintf(stderr, "[TASK %d] Received termination signal!\n", id);
+                //     break;
+                // }
             }
         }
     }
