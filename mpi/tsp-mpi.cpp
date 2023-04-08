@@ -33,10 +33,10 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
+    int length;            /* tour size */
     int * tour;            /* tour so far (its ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
-    int length;            /* tour size */
 } * Node;
 
 /* determines whether a node is "smaller" than another node */
@@ -97,33 +97,54 @@ void update_mins(int coord, double dist, City ** cities) {
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color, int n_cities) {
+void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
     if (other_load - my_load > delta_LB) {
         for (int i = 0; i < 3; i++) {
             if (other < me) *(color) = BLACK;
-            Node subproblem, aux;
+            Node node, aux;
             aux = queue.pop();
-            subproblem = queue.pop();
+            node = queue.pop();
             queue.push(aux);
-            MPI_Send(subproblem, 1, node_type, other, WORK_TAG, comm);
-            MPI_Send(subproblem->tour, n_cities + 1, MPI_INT, other, WORK_TAG, comm);
+
+            /* serialize and send node */
+            int length = node->length;
+            char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+            memcpy(buffer, &length, sizeof(int));
+            memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
+            memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
+            memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
+
+            MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, other, WORK_TAG, comm);
+            
+            free(node->tour);
+            free(node);
+            free(buffer);
         }
     }
 }
 
-void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color, int n_cities) {
+void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
     if (my_load - other_load > delta_amount) {
         int n = (int) ((my_load - other_load) * send_amount_rate);
         for (int i = 0; i < n; i++) {
             if (other < me) *(color) = BLACK;
-            Node subproblem = queue.get_buffer().back();
+
+            Node node = queue.get_buffer().back();
             queue.get_buffer().pop_back();
-            //MPI_Send(subproblem, 1, node_type, other, WORK_TAG, comm);
-            MPI_Send(&subproblem->length, 1, MPI_INT, other, WORK_TAG, comm);
-            MPI_Send(&subproblem->cost, 1, MPI_DOUBLE, other, WORK_TAG, comm);
-            MPI_Send(&subproblem->lower_bound, 1, MPI_DOUBLE, other, WORK_TAG, comm);
-            MPI_Send(subproblem->tour, subproblem->length, MPI_INT, other, WORK_TAG, comm);
-            //MPI_Send(subproblem->tour, n_cities + 1, MPI_INT, other, WORK_TAG, comm);
+
+            /* serialize and send node */
+            int length = node->length;
+            char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+            memcpy(buffer, &length, sizeof(int));
+            memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
+            memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
+            memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
+
+            MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, other, WORK_TAG, comm);
+            
+            free(node->tour);
+            free(node);
+            free(buffer);
         }
     }
 }
@@ -141,24 +162,8 @@ void inform_neighbors(int me, int n_tasks, int my_load_LB, int my_load_amount, M
 }
 
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities, int n_tasks, int id){
-    /* CREATE A NODE TYPE FOR MPI */
-    MPI_Datatype node_type;
-    const int n_items = 4;
-    int          lengths[n_items] = {n_cities + 1, 1, 1, 1};
-    MPI_Datatype types[n_items]   = {MPI_INT, MPI_DOUBLE, MPI_DOUBLE, MPI_INT};
-    MPI_Aint     offsets[n_items];
-
-    offsets[0] = offsetof(node, tour);
-    offsets[1] = offsetof(node, cost);
-    offsets[2] = offsetof(node, lower_bound);
-    offsets[3] = offsetof(node, length);
-
-    MPI_Type_create_struct(n_items, lengths, offsets, types, &node_type);
-    MPI_Type_commit(&node_type);
-    
     /* INITIALIZATION */
     bool finished = false;
-    char *placeholder_buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*n_cities);
     bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
     
     /* RING TERMINATION */
@@ -174,7 +179,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //printf("[TASK %d] Executing sequential part...\n", id);
     /* init root */
     Node root = (Node) calloc(1, sizeof(struct node));
-    root->tour = (int *) calloc(n_cities + 1, sizeof(int));
+    root->tour = (int *) calloc(1, sizeof(int));
     root->tour[0] = 0;
     root->cost = 0;
     root->lower_bound = initialLowerBound(n_cities, cities);
@@ -272,7 +277,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double min_cost;
     
     /* minimum delay since last communication: approx. time to process a node */
-    double delay = 0.0000001 * n_cities;
+    double delay = 2;
     /* deltas and rates */
     int delta_LB = 1;
     int delta_amount = 3;
@@ -302,35 +307,44 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             load_LB[source] = info[0];
             load_amount[source] = info[1];
-            balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, node_type, MPI_COMM_WORLD, &color, n_cities);
-            balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, node_type, MPI_COMM_WORLD, &color, n_cities);
+            balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
+            balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, MPI_COMM_WORLD, &color, n_cities);
         }
 
         flag = false;
         MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
         if (flag) {
-            //fprintf(stderr, "Process %d: received work request\n", id);
+            fprintf(stderr, "Process %d: received work request\n", id);
             int source = balance_status.MPI_SOURCE;
             Node subproblem = (Node) calloc(1, sizeof(struct node));
-            
-            MPI_Recv(&subproblem->length, 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&subproblem->cost, 1, MPI_DOUBLE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&subproblem->lower_bound, 1, MPI_DOUBLE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
+            char * placeholder_buffer = (char *) calloc(size, sizeof(char));
+
+            /* receive and deserialize node */
+            MPI_Recv(placeholder_buffer, size, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
 
             subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
-            MPI_Recv(subproblem->tour, subproblem->length, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            //fprintf(stderr, "111Process %d: received work from %d\n", id, source);
-            //fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length);
+            memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
+            memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
+            memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
             
-            //fprintf(stderr, "receiving tour\n");
+            free(placeholder_buffer);
+            
+            fprintf(stderr, "111Process %d: received work from %d\n", id, source);
+            
+            fprintf(stderr, "receiving tour\n");
             //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            // for(int i = 0; i < subproblem->length; i++) {
-            //     fprintf(stderr, "%d ", subproblem->tour[i]);
-            // }
-            // fprintf(stderr, "\n");
+            
             queue.push(subproblem);
-            //fprintf(stderr, "222Process %d: received work from %d\n", id, source);
+            fprintf(stderr, "222Process %d: received work from %d\n", id, source);
+            fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
+
+            for(int i = 0; i < subproblem->length; i++) {
+                fprintf(stderr, "%d ", subproblem->tour[i]);
+            }
+            fprintf(stderr, "\n");
         }
 
         flag = false;
@@ -408,6 +422,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 memset(tour_nodes, false, n_cities * sizeof(bool));
 
             }
+            //fprintf(stderr, "Process %d: FREEING node %d\n", id, node);
             free(node->tour);
             free(node);
         }         
