@@ -100,6 +100,7 @@ void update_mins(int coord, double dist, City ** cities) {
 void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
     if (other_load - my_load > delta_LB) {
         for (int i = 0; i < 1; i++) {
+            if (queue.empty()) return; 
             if (other < me) *(color) = BLACK;
             Node node, aux;
             aux = queue.pop();
@@ -127,6 +128,7 @@ void balance_amount(int me, int other, int my_load, int other_load, int delta_am
     if (my_load - other_load > delta_amount) {
         int n = (int) ((my_load - other_load) * send_amount_rate);
         for (int i = 0; i < 1; i++) {
+            if (queue.empty()) return; 
             if (other < me) *(color) = BLACK;
 
             Node node = queue.get_buffer().back();
