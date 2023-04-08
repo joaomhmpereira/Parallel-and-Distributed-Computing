@@ -97,7 +97,7 @@ void update_mins(int coord, double dist, City ** cities) {
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color) {
+void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color, int n_cities) {
     if (other_load - my_load > delta_LB) {
         for (int i = 0; i < 3; i++) {
             if (other < me) *(color) = BLACK;
@@ -106,18 +106,24 @@ void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, Pr
             subproblem = queue.pop();
             queue.push(aux);
             MPI_Send(subproblem, 1, node_type, other, WORK_TAG, comm);
+            MPI_Send(subproblem->tour, n_cities + 1, MPI_INT, other, WORK_TAG, comm);
         }
     }
 }
 
-void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color) {
+void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Datatype node_type, MPI_Comm comm, int * color, int n_cities) {
     if (my_load - other_load > delta_amount) {
         int n = (int) ((my_load - other_load) * send_amount_rate);
         for (int i = 0; i < n; i++) {
             if (other < me) *(color) = BLACK;
             Node subproblem = queue.get_buffer().back();
             queue.get_buffer().pop_back();
-            MPI_Send(subproblem, 1, node_type, other, WORK_TAG, comm);
+            //MPI_Send(subproblem, 1, node_type, other, WORK_TAG, comm);
+            MPI_Send(&subproblem->length, 1, MPI_INT, other, WORK_TAG, comm);
+            MPI_Send(&subproblem->cost, 1, MPI_DOUBLE, other, WORK_TAG, comm);
+            MPI_Send(&subproblem->lower_bound, 1, MPI_DOUBLE, other, WORK_TAG, comm);
+            MPI_Send(subproblem->tour, subproblem->length, MPI_INT, other, WORK_TAG, comm);
+            //MPI_Send(subproblem->tour, n_cities + 1, MPI_INT, other, WORK_TAG, comm);
         }
     }
 }
@@ -296,20 +302,38 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             load_LB[source] = info[0];
             load_amount[source] = info[1];
-
-            balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, node_type, MPI_COMM_WORLD, &color);
-            balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, node_type, MPI_COMM_WORLD, &color);
+            balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, node_type, MPI_COMM_WORLD, &color, n_cities);
+            balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, node_type, MPI_COMM_WORLD, &color, n_cities);
         }
 
+        flag = false;
         MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
         if (flag) {
+            //fprintf(stderr, "Process %d: received work request\n", id);
             int source = balance_status.MPI_SOURCE;
-            Node subproblem;
-            MPI_Recv(subproblem, 1, node_type, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            Node subproblem = (Node) calloc(1, sizeof(struct node));
             
+            MPI_Recv(&subproblem->length, 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&subproblem->cost, 1, MPI_DOUBLE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&subproblem->lower_bound, 1, MPI_DOUBLE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
+            MPI_Recv(subproblem->tour, subproblem->length, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            //fprintf(stderr, "111Process %d: received work from %d\n", id, source);
+            //fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length);
+            
+            //fprintf(stderr, "receiving tour\n");
+            //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // for(int i = 0; i < subproblem->length; i++) {
+            //     fprintf(stderr, "%d ", subproblem->tour[i]);
+            // }
+            // fprintf(stderr, "\n");
             queue.push(subproblem);
+            //fprintf(stderr, "222Process %d: received work from %d\n", id, source);
         }
 
+        flag = false;
         MPI_Iprobe(MPI_ANY_SOURCE, SOLUTION_TAG, MPI_COMM_WORLD, &flag, &solution_status);
         if (flag) {
             int source = solution_status.MPI_SOURCE;
@@ -398,7 +422,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 broadcasted = true;
                 num_idle_processes++;
                 idle_processes[id] = true;
-                fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
+                //fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
             }
             
             //MPI_Test(&request_broadcast, &flag, &bcast_status);
@@ -409,7 +433,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 idle_processes[source] = true;
                 num_idle_processes++;
-                fprintf(stderr, "[TASK %d] Received broadcast from %d, Idle: %d\n", id, source, num_idle_processes);
+                //fprintf(stderr, "[TASK %d] Received broadcast from %d, Idle: %d\n", id, source, num_idle_processes);
             }
             //flag = 0;
         }
@@ -417,7 +441,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         //fprintf(stderr, "[TASK %d] Num idle processes before checking: %d\n", id, num_idle_processes);
 
         if (num_idle_processes == n_tasks) {
-            fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
+            //fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
             color = WHITE;
             if (!id) {
                 /* P0 sends a white token to P1 */
@@ -440,7 +464,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 /* when a process finishes, it waits to receive the token */
-                fprintf(stderr, "[TASK %d] Waiting for token...\n", id);
+                //fprintf(stderr, "[TASK %d] Waiting for token...\n", id);
                 MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 flag = 1;
