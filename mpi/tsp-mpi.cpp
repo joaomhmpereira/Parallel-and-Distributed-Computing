@@ -308,7 +308,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             load_LB[source] = info[0];
             load_amount[source] = info[1];
-            balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
+            if (!queue.empty())
+                balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
+            else
+                balance_LB(id, source, *(best_tour_cost), info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
             balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, MPI_COMM_WORLD, &color, n_cities);
         }
 
