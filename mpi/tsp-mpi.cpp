@@ -316,41 +316,41 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         // }
 
         // flag = false;
-        MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
-        if (flag) {
-            //fprintf(stderr, "Process %d: received work request\n", id);
+        // MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
+        // if (flag) {
+        //     //fprintf(stderr, "Process %d: received work request\n", id);
 
-            int source = balance_status.MPI_SOURCE;
-            fprintf(stderr, "Process %d: received work from %d\n", id, source);
-            Node subproblem = (Node) calloc(1, sizeof(struct node));
-            size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
-            char * placeholder_buffer = (char *) calloc(size, sizeof(char));
+        //     int source = balance_status.MPI_SOURCE;
+        //     fprintf(stderr, "Process %d: received work from %d\n", id, source);
+        //     Node subproblem = (Node) calloc(1, sizeof(struct node));
+        //     size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
+        //     char * placeholder_buffer = (char *) calloc(size, sizeof(char));
 
-            /* receive and deserialize node */
-            MPI_Recv(placeholder_buffer, size, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //     /* receive and deserialize node */
+        //     MPI_Recv(placeholder_buffer, size, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
+        //     memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
 
-            subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
-            memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
-            memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
-            memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
+        //     subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
+        //     memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
+        //     memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
+        //     memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
             
-            free(placeholder_buffer);
+        //     free(placeholder_buffer);
             
             
-            //fprintf(stderr, "receiving tour\n");
-            //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //     //fprintf(stderr, "receiving tour\n");
+        //     //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             
-            queue.push(subproblem);
-            // fprintf(stderr, "222Process %d: received work from %d\n", id, source);
-            // fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
+        //     queue.push(subproblem);
+        //     // fprintf(stderr, "222Process %d: received work from %d\n", id, source);
+        //     // fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
 
-            // for(int i = 0; i < subproblem->length; i++) {
-            //     fprintf(stderr, "%d ", subproblem->tour[i]);
-            // }
-            // fprintf(stderr, "\n");
-        }
+        //     // for(int i = 0; i < subproblem->length; i++) {
+        //     //     fprintf(stderr, "%d ", subproblem->tour[i]);
+        //     // }
+        //     // fprintf(stderr, "\n");
+        // }
 
         flag = false;
         MPI_Iprobe(MPI_ANY_SOURCE, SOLUTION_TAG, MPI_COMM_WORLD, &flag, &solution_status);
@@ -453,34 +453,32 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 fprintf(stderr, "Process %d: received idle tag from %d\n", id, source);
 
-                if (!queue.empty()) {
-                    fprintf(stderr, "Process %d: sending work to %d\n", id, source);
-                    Node node = queue.pop();
+                // if (!queue.empty()) {
+                //     fprintf(stderr, "Process %d: sending work to %d\n", id, source);
+                //     Node node = queue.pop();
 
-                    /* serialize and send node */
-                    int length = node->length;
-                    char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
-                    memcpy(buffer, &length, sizeof(int));
-                    memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
-                    memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
-                    memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
+                //     /* serialize and send node */
+                //     int length = node->length;
+                //     char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+                //     memcpy(buffer, &length, sizeof(int));
+                //     memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
+                //     memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
+                //     memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
 
-                    MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
+                //     MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
 
-                    free(node->tour);
-                    free(node);
-                    free(buffer);
+                //     free(node->tour);
+                //     free(node);
+                //     free(buffer);
                     
-                    if (source < id) color = BLACK;
-                } else {
+                //     if (source < id) color = BLACK;
+                // } else {
                     fprintf(stderr, "Process %d: i dont have more work\n", id);
                     idle_processes[source] = true;
                     num_idle_processes++;
-                }
-                
             }
+                
         }
-        
 
         if (num_idle_processes == n_tasks) {
             //fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
