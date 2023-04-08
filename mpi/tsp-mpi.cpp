@@ -358,6 +358,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             int source = solution_status.MPI_SOURCE;
             double cost;
             MPI_Recv(&cost, 1, MPI_DOUBLE, source, SOLUTION_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            fprintf(stderr, "Process %d: received solution from %d\n", id, source);
             if (cost < *(best_tour_cost)) {
                 *(best_tour_cost) = cost;
             }
@@ -450,8 +451,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (flag) {
                 int source = bcast_status.MPI_SOURCE;
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                
+                fprintf(stderr, "Process %d: received idle tag from %d\n", id, source);
+
                 if (!queue.empty()) {
+                    fprintf(stderr, "Process %d: sending work to %d\n", id, source);
                     Node node = queue.pop();
 
                     /* serialize and send node */
@@ -470,6 +473,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     
                     if (source < id) color = BLACK;
                 } else {
+                    fprintf(stderr, "Process %d: i dont have more work\n", id);
                     idle_processes[source] = true;
                     num_idle_processes++;
                 }
