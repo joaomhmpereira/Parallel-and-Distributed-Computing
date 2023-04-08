@@ -99,7 +99,7 @@ void update_mins(int coord, double dist, City ** cities) {
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
     if (other_load - my_load > delta_LB) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 1; i++) {
             if (other < me) *(color) = BLACK;
             Node node, aux;
             aux = queue.pop();
@@ -126,11 +126,10 @@ void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, Pr
 void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
     if (my_load - other_load > delta_amount) {
         int n = (int) ((my_load - other_load) * send_amount_rate);
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < 1; i++) {
             if (other < me) *(color) = BLACK;
 
             Node node = queue.get_buffer().back();
-            queue.get_buffer().pop_back();
 
             /* serialize and send node */
             int length = node->length;
@@ -142,8 +141,7 @@ void balance_amount(int me, int other, int my_load, int other_load, int delta_am
 
             MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, other, WORK_TAG, comm);
             
-            free(node->tour);
-            free(node);
+            queue.get_buffer().pop_back();
             free(buffer);
         }
     }
@@ -152,9 +150,7 @@ void balance_amount(int me, int other, int my_load, int other_load, int delta_am
 void inform_neighbors(int me, int n_tasks, int my_load_LB, int my_load_amount, MPI_Comm comm, int * color) {
     for (int i = 0; i < n_tasks; i++) {
         if (i != me) {
-            if (i < me) {
-                *(color) = BLACK;
-            }
+            if (i < me) *(color) = BLACK;
             int info[2] = {my_load_LB, my_load_amount};
             MPI_Send(info, 2, MPI_INT, i, INFO_TAG, comm);
         }
@@ -277,7 +273,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double min_cost;
     
     /* minimum delay since last communication: approx. time to process a node */
-    double delay = 2;
+    double delay = 1;
     /* deltas and rates */
     int delta_LB = 1;
     int delta_amount = 3;
@@ -295,8 +291,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     load_amount = (int *) calloc(n_tasks, sizeof(int));
 
     while (1) {
-        if (MPI_Wtime() - last_comm > delay || queue.empty()) {
-            inform_neighbors(id, n_tasks, queue.top()->lower_bound, queue.size(), MPI_COMM_WORLD, &color);
+        if (MPI_Wtime() - last_comm > delay) {
+            if (!queue.empty())
+                inform_neighbors(id, n_tasks, queue.top()->lower_bound, queue.size(), MPI_COMM_WORLD, &color);
+            else
+                inform_neighbors(id, n_tasks, *(best_tour_cost), 0, MPI_COMM_WORLD, &color);
             last_comm = MPI_Wtime();
         } 
         
@@ -332,19 +331,19 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             
             free(placeholder_buffer);
             
-            fprintf(stderr, "111Process %d: received work from %d\n", id, source);
+            //fprintf(stderr, "111Process %d: received work from %d\n", id, source);
             
-            fprintf(stderr, "receiving tour\n");
+            //fprintf(stderr, "receiving tour\n");
             //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             
             queue.push(subproblem);
-            fprintf(stderr, "222Process %d: received work from %d\n", id, source);
-            fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
+            // fprintf(stderr, "222Process %d: received work from %d\n", id, source);
+            // fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
 
-            for(int i = 0; i < subproblem->length; i++) {
-                fprintf(stderr, "%d ", subproblem->tour[i]);
-            }
-            fprintf(stderr, "\n");
+            // for(int i = 0; i < subproblem->length; i++) {
+            //     fprintf(stderr, "%d ", subproblem->tour[i]);
+            // }
+            // fprintf(stderr, "\n");
         }
 
         flag = false;
@@ -371,7 +370,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(n->tour);
                     free(n);
                 }
-                free(tour_nodes);
                 continue;
             }
 
@@ -504,7 +502,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     free(idle_processes);
     free(load_LB);
     free(load_amount);
-    //free(tour_nodes);
+    free(tour_nodes);
     // ring termination (so qd fizermos o load balancing)
 
     /* in the end, determine the best solution */
