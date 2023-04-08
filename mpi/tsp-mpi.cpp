@@ -7,7 +7,6 @@
 #include <fstream>
 #include <cstring>
 #include <vector>
-#include <cstddef>
 #include <mpi.h>
 #include "nqueue/queue.hpp"
 
@@ -20,9 +19,6 @@ using namespace std;
 #define BLACK 4
 #define TOKEN_TAG 5
 #define IDLE_TAG 6
-#define WORK_TAG 7
-#define INFO_TAG 8
-#define SOLUTION_TAG 9
 
 /* STRUCTURES */
 
@@ -33,10 +29,10 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
-    int length;            /* tour size */
     int * tour;            /* tour so far (its ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
+    int length;            /* tour size */
 } * Node;
 
 /* determines whether a node is "smaller" than another node */
@@ -97,71 +93,17 @@ void update_mins(int coord, double dist, City ** cities) {
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-void balance_LB(int me, int other, int my_load, int other_load, int delta_LB, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
-    if (other_load - my_load > delta_LB) {
-        for (int i = 0; i < 1; i++) {
-            if (queue.empty()) return; 
-            if (other < me) *(color) = BLACK;
-            Node node, aux;
-            aux = queue.pop();
-            node = queue.pop();
-            queue.push(aux);
-
-            /* serialize and send node */
-            int length = node->length;
-            char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
-            memcpy(buffer, &length, sizeof(int));
-            memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
-            memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
-            memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
-
-            MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, other, WORK_TAG, comm);
-            
-            free(node->tour);
-            free(node);
-            free(buffer);
-        }
-    }
-}
-
-void balance_amount(int me, int other, int my_load, int other_load, int delta_amount, double send_amount_rate, PriorityQueue<Node, cmp_op> queue, MPI_Comm comm, int * color, int n_cities) {
-    if (my_load - other_load > delta_amount) {
-        int n = (int) ((my_load - other_load) * send_amount_rate);
-        for (int i = 0; i < 1; i++) {
-            if (queue.empty()) return; 
-            if (other < me) *(color) = BLACK;
-
-            Node node = queue.get_buffer().back();
-
-            /* serialize and send node */
-            int length = node->length;
-            char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
-            memcpy(buffer, &length, sizeof(int));
-            memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
-            memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
-            memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
-
-            MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, other, WORK_TAG, comm);
-            
-            queue.get_buffer().pop_back();
-            free(buffer);
-        }
-    }
-}
-
-void inform_neighbors(int me, int n_tasks, int my_load_LB, int my_load_amount, MPI_Comm comm, int * color) {
-    for (int i = 0; i < n_tasks; i++) {
-        if (i != me) {
-            if (i < me) *(color) = BLACK;
-            int info[2] = {my_load_LB, my_load_amount};
-            MPI_Send(info, 2, MPI_INT, i, INFO_TAG, comm);
-        }
-    }
-}
-
+/**
+ * Dar free à intial_queue
+ * 
+ * Perguntas:
+ *  - como é que mandamos um Node? bytes? ou temos de criar estruturas do MPI?
+ * 
+*/
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities, int n_tasks, int id){
     /* INITIALIZATION */
     bool finished = false;
+    char *placeholder_buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*n_cities);
     bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
     
     /* RING TERMINATION */
@@ -230,7 +172,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                         continue;
                     }
                     Node newNode = (Node) calloc(1, sizeof(struct node));
-                    newNode->tour = (int *) calloc(n_cities + 1, sizeof(int));
+                    newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
                     for (int j = 0; j < node->length; j++) {
                         newNode->tour[j] = node->tour[j];
                     }
@@ -246,6 +188,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         free(node->tour);
         free(node);
     }  
+
+    //free(tour_nodes_init);
 
     if (initial_queue.empty()) return;
 
@@ -263,104 +207,38 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         i++;
     }
 
-    /* PARALLEL PART - EACH PROCESS WORKS ON ITS SUBPROBLEM */
-    bool broadcasted = false, reduced = false;
-    bool * idle_processes;
-    MPI_Status inform_neighbors_status;
-    int num_idle_processes = 0;
-    MPI_Status solution_status;
-    MPI_Status balance_status;
-    MPI_Status bcast_status;
+    //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
     int iterations = 0;
     double min_cost;
+    bool idle_processes[n_tasks] = {false};
+    int num_idle_processes = 0;
+    bool broadcasted = false, reduced = false;
+    MPI_Status bcast_status;
     
-    /* minimum delay since last communication: approx. time to process a node */
-    double delay = 1;
-    /* deltas and rates */
-    int delta_LB = 1;
-    int delta_amount = 3;
-    double send_amount_rate = 0.65;
-    int send_LB_rate = 3;
+    // todos a trabalhar em paralelo
+    while (1){
+        iterations++;
 
-    /* last time processes interchanged each type of message */
-    double last_comm = MPI_Wtime();
-    /* amount of load each process has (depending on type) */
-    int * load_LB;
-    int * load_amount;
-
-    idle_processes = (bool *) calloc(n_tasks, sizeof(bool));
-    load_LB = (int *) calloc(n_tasks, sizeof(int));
-    load_amount = (int *) calloc(n_tasks, sizeof(int));
-
-    while (1) {
-        // if (MPI_Wtime() - last_comm > delay) {
-        //     if (!queue.empty())
-        //         inform_neighbors(id, n_tasks, queue.top()->lower_bound, queue.size(), MPI_COMM_WORLD, &color);
-        //     else
-        //         inform_neighbors(id, n_tasks, *(best_tour_cost), 0, MPI_COMM_WORLD, &color);
-        //     last_comm = MPI_Wtime();
-        // } 
+        if (iterations % 500000 == 0 ) {
+            //fprintf(stderr, "[TASK %d] ... reducing ... \n", id);
+            MPI_Iallreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &request_allreduce);
+            reduced = true;
+            //fprintf(stderr, "[TASK %d] !!! already reduced !!! \n", id);
+            
+            color = BLACK;
+            //fprintf(stderr, "[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
         
-        // MPI_Iprobe(MPI_ANY_SOURCE, INFO_TAG, MPI_COMM_WORLD, &flag, &inform_neighbors_status);
-        // if (flag) {
-        //     int source = inform_neighbors_status.MPI_SOURCE;
-        //     int info[2];
-        //     MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        //     load_LB[source] = info[0];
-        //     load_amount[source] = info[1];
-        //     if (!queue.empty())
-        //         balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
-        //     else
-        //         balance_LB(id, source, *(best_tour_cost), info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
-        //     balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, MPI_COMM_WORLD, &color, n_cities);
-        // }
-
-        // flag = false;
-        // MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
-        // if (flag) {
-        //     //fprintf(stderr, "Process %d: received work request\n", id);
-
-        //     int source = balance_status.MPI_SOURCE;
-        //     fprintf(stderr, "Process %d: received work from %d\n", id, source);
-        //     Node subproblem = (Node) calloc(1, sizeof(struct node));
-        //     size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
-        //     char * placeholder_buffer = (char *) calloc(size, sizeof(char));
-
-        //     /* receive and deserialize node */
-        //     MPI_Recv(placeholder_buffer, size, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        //     memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
-
-        //     subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
-        //     memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
-        //     memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
-        //     memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
-            
-        //     free(placeholder_buffer);
-            
-            
-        //     //fprintf(stderr, "receiving tour\n");
-        //     //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            
-        //     queue.push(subproblem);
-        //     // fprintf(stderr, "222Process %d: received work from %d\n", id, source);
-        //     // fprintf(stderr, "Node: cost = %f, lower_bound = %f, length = %d, tour = %d\n", subproblem->cost, subproblem->lower_bound, subproblem->length, subproblem->tour);
-
-        //     // for(int i = 0; i < subproblem->length; i++) {
-        //     //     fprintf(stderr, "%d ", subproblem->tour[i]);
-        //     // }
-        //     // fprintf(stderr, "\n");
-        // }
-
-        flag = false;
-        MPI_Iprobe(MPI_ANY_SOURCE, SOLUTION_TAG, MPI_COMM_WORLD, &flag, &solution_status);
-        if (flag) {
-            int source = solution_status.MPI_SOURCE;
-            double cost;
-            MPI_Recv(&cost, 1, MPI_DOUBLE, source, SOLUTION_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            fprintf(stderr, "Process %d: received solution from %d\n", id, source);
-            if (cost < *(best_tour_cost)) {
-                *(best_tour_cost) = cost;
+        } 
+        
+        if (reduced && iterations % 50000 == 0){
+            MPI_Test(&request_allreduce, &flag2, MPI_STATUS_IGNORE);
+            if (flag2){
+                fprintf(stderr, "[TASK %d] got a result from the reduce \n", id);
+                if (min_cost < (*best_tour_cost)){
+                    (*best_tour_cost) = min_cost;
+                    fprintf(stderr, "[TASK %d] !!! best tour cost updated !!! \n", id);
+                }
+                reduced = false;
             }
         }
 
@@ -377,6 +255,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(n->tour);
                     free(n);
                 }
+                free(tour_nodes);
                 continue;
             }
 
@@ -390,13 +269,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     (*best_tour)[i] = 0;
 
                     (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
-
-                    for (int i = 0; i < n_tasks; i++) {
-                        if (i != id) {
-                            if (i < id) color = BLACK;
-                            MPI_Send(best_tour_cost, 1, MPI_DOUBLE, i, SOLUTION_TAG, MPI_COMM_WORLD);
-                        }
-                    }
                 }
             } 
             else {
@@ -427,7 +299,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 memset(tour_nodes, false, n_cities * sizeof(bool));
 
             }
-            //fprintf(stderr, "Process %d: FREEING node %d\n", id, node);
             free(node->tour);
             free(node);
         }         
@@ -442,7 +313,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 broadcasted = true;
                 num_idle_processes++;
                 idle_processes[id] = true;
-                //fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
+                fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
             }
             
             //MPI_Test(&request_broadcast, &flag, &bcast_status);
@@ -451,37 +322,17 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (flag) {
                 int source = bcast_status.MPI_SOURCE;
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                fprintf(stderr, "Process %d: received idle tag from %d\n", id, source);
-
-                // if (!queue.empty()) {
-                //     fprintf(stderr, "Process %d: sending work to %d\n", id, source);
-                //     Node node = queue.pop();
-
-                //     /* serialize and send node */
-                //     int length = node->length;
-                //     char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
-                //     memcpy(buffer, &length, sizeof(int));
-                //     memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
-                //     memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
-                //     memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
-
-                //     MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
-
-                //     free(node->tour);
-                //     free(node);
-                //     free(buffer);
-                    
-                //     if (source < id) color = BLACK;
-                // } else {
-                    fprintf(stderr, "Process %d: i dont have more work\n", id);
-                    idle_processes[source] = true;
-                    num_idle_processes++;
+                idle_processes[source] = true;
+                num_idle_processes++;
+                fprintf(stderr, "[TASK %d] Received broadcast from %d, Idle: %d\n", id, source, num_idle_processes);
             }
-                
+            //flag = 0;
         }
+        
+        //fprintf(stderr, "[TASK %d] Num idle processes before checking: %d\n", id, num_idle_processes);
 
         if (num_idle_processes == n_tasks) {
-            //fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
+            fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
             color = WHITE;
             if (!id) {
                 /* P0 sends a white token to P1 */
@@ -504,7 +355,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
             else {
                 /* when a process finishes, it waits to receive the token */
-                //fprintf(stderr, "[TASK %d] Waiting for token...\n", id);
+                fprintf(stderr, "[TASK %d] Waiting for token...\n", id);
                 MPI_Recv(&token, 1, MPI_INT, prev_rank, TOKEN_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 //MPI_Test(&request_receive, &flag, MPI_STATUS_IGNORE);
                 flag = 1;
@@ -522,14 +373,17 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (terminate == 0 || id) {
                 MPI_Bcast(&terminate, 1, MPI_INT, 0, MPI_COMM_WORLD);
                 break;
+                // MPI_Test(&request_broadcast, &flag, MPI_STATUS_IGNORE);
+                // fprintf(stderr, "[TASK %d] ::: broadcast flag ::: -> %d\n", id, flag);
+                // if (flag) {
+                //     fprintf(stderr, "[TASK %d] Received termination signal!\n", id);
+                //     break;
+                // }
             }
         }
     }
 
-    free(idle_processes);
-    free(load_LB);
-    free(load_amount);
-    free(tour_nodes);
+    //free(tour_nodes);
     // ring termination (so qd fizermos o load balancing)
 
     /* in the end, determine the best solution */
@@ -542,8 +396,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
     else {
         MPI_Status status;
+        printf("[TASK %d] Local cost: %f\n", id, (*best_tour_cost));
         for (int i = 1; i < n_tasks; i++) {
             MPI_Recv(&best_tour_cost_neighbor, 1, MPI_DOUBLE, i, COST_TAG, MPI_COMM_WORLD, &status);
+            printf("[TASK %d] Received cost from %d: %f\n", id, i, best_tour_cost_neighbor);
             
             MPI_Recv(best_tour_neighbor, n_cities + 1, MPI_INT, i, TOUR_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             if (best_tour_cost_neighbor < (*best_tour_cost)) {
