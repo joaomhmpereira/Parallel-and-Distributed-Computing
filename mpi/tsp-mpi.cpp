@@ -293,33 +293,35 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     load_amount = (int *) calloc(n_tasks, sizeof(int));
 
     while (1) {
-        if (MPI_Wtime() - last_comm > delay) {
-            if (!queue.empty())
-                inform_neighbors(id, n_tasks, queue.top()->lower_bound, queue.size(), MPI_COMM_WORLD, &color);
-            else
-                inform_neighbors(id, n_tasks, *(best_tour_cost), 0, MPI_COMM_WORLD, &color);
-            last_comm = MPI_Wtime();
-        } 
+        // if (MPI_Wtime() - last_comm > delay) {
+        //     if (!queue.empty())
+        //         inform_neighbors(id, n_tasks, queue.top()->lower_bound, queue.size(), MPI_COMM_WORLD, &color);
+        //     else
+        //         inform_neighbors(id, n_tasks, *(best_tour_cost), 0, MPI_COMM_WORLD, &color);
+        //     last_comm = MPI_Wtime();
+        // } 
         
-        MPI_Iprobe(MPI_ANY_SOURCE, INFO_TAG, MPI_COMM_WORLD, &flag, &inform_neighbors_status);
-        if (flag) {
-            int source = inform_neighbors_status.MPI_SOURCE;
-            int info[2];
-            MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            load_LB[source] = info[0];
-            load_amount[source] = info[1];
-            if (!queue.empty())
-                balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
-            else
-                balance_LB(id, source, *(best_tour_cost), info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
-            balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, MPI_COMM_WORLD, &color, n_cities);
-        }
+        // MPI_Iprobe(MPI_ANY_SOURCE, INFO_TAG, MPI_COMM_WORLD, &flag, &inform_neighbors_status);
+        // if (flag) {
+        //     int source = inform_neighbors_status.MPI_SOURCE;
+        //     int info[2];
+        //     MPI_Recv(&info, 2, MPI_INT, source, INFO_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //     load_LB[source] = info[0];
+        //     load_amount[source] = info[1];
+        //     if (!queue.empty())
+        //         balance_LB(id, source, queue.top()->lower_bound, info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
+        //     else
+        //         balance_LB(id, source, *(best_tour_cost), info[0], delta_LB, queue, MPI_COMM_WORLD, &color, n_cities);
+        //     balance_amount(id, source, queue.size(), info[1], delta_amount, send_amount_rate, queue, MPI_COMM_WORLD, &color, n_cities);
+        // }
 
-        flag = false;
+        // flag = false;
         MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &balance_status);
         if (flag) {
-            fprintf(stderr, "Process %d: received work request\n", id);
+            //fprintf(stderr, "Process %d: received work request\n", id);
+
             int source = balance_status.MPI_SOURCE;
+            fprintf(stderr, "Process %d: received work from %d\n", id, source);
             Node subproblem = (Node) calloc(1, sizeof(struct node));
             size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
             char * placeholder_buffer = (char *) calloc(size, sizeof(char));
@@ -336,7 +338,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             
             free(placeholder_buffer);
             
-            //fprintf(stderr, "111Process %d: received work from %d\n", id, source);
             
             //fprintf(stderr, "receiving tour\n");
             //MPI_Recv(subproblem->tour, n_cities + 1, MPI_INT, source, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -449,14 +450,33 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (flag) {
                 int source = bcast_status.MPI_SOURCE;
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                idle_processes[source] = true;
-                num_idle_processes++;
-                //fprintf(stderr, "[TASK %d] Received broadcast from %d, Idle: %d\n", id, source, num_idle_processes);
+                
+                if (!queue.empty()) {
+                    Node node = queue.pop();
+
+                    /* serialize and send node */
+                    int length = node->length;
+                    char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+                    memcpy(buffer, &length, sizeof(int));
+                    memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
+                    memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
+                    memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
+
+                    MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
+
+                    free(node->tour);
+                    free(node);
+                    free(buffer);
+                    
+                    if (source < id) color = BLACK;
+                } else {
+                    idle_processes[source] = true;
+                    num_idle_processes++;
+                }
+                
             }
-            //flag = 0;
         }
         
-        //fprintf(stderr, "[TASK %d] Num idle processes before checking: %d\n", id, num_idle_processes);
 
         if (num_idle_processes == n_tasks) {
             //fprintf(stderr, "[TASK %d] Initiating ring termination!\n", id);
