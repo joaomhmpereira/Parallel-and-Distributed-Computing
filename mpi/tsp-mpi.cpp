@@ -19,6 +19,7 @@ using namespace std;
 #define BLACK 4
 #define TOKEN_TAG 5
 #define IDLE_TAG 6
+#define WORK_TAG 7
 
 /* STRUCTURES */
 
@@ -29,10 +30,10 @@ typedef struct city { /* contain's a city's information */
 } * City;
 
 typedef struct node { /* a node in the search tree */
+    int length;            /* tour size */
     int * tour;            /* tour so far (its ancestors) */
     double cost;           /* tour cost so far */
     double lower_bound;    /* node's lower bound */
-    int length;            /* tour size */
 } * Node;
 
 /* determines whether a node is "smaller" than another node */
@@ -200,21 +201,22 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double last_communication = MPI_Wtime();
     double other_best_tour_cost;
     int num_idle_processes = 0;
-    bool * idle_processes;
     bool i_am_best = true;
     bool reduced = false;
     int iterations = 0;
     double delay = 1.0;
     double min_cost = *(best_tour_cost);
 
-    MPI_Status allreduce_status;
-    MPI_Request allreduce_request;
-    int allreduce_flag;
+    MPI_Status allreduce_status, idle_send_status;
+    MPI_Request allreduce_request, idle_send_request;
+    int allreduce_flag, idle_receive_flag, work_receive_flag;
     
-    idle_processes = (bool *) calloc(n_tasks, sizeof(bool));
-    
+    bool terminated = false;
+    bool * terminated_processes;
+    terminated_processes = (bool *) calloc(n_tasks, sizeof(bool));
+
     /* PARALLEL PART */
-    while (!queue.empty()){
+    while (!terminated){
 
         /* every second, exchange the best cost */
         if (MPI_Wtime() - last_communication > delay) {
@@ -288,8 +290,88 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             memset(tour_nodes, false, n_cities * sizeof(bool));
 
         }
+
         free(node->tour);
         free(node);
+
+        /* if a process has no more nodes, it asks the others */
+        if (queue.empty()) {
+            terminated_processes[id] = true;
+            for (int i = 0; i < n_tasks; i++) {
+                MPI_Isend(&i, 1, MPI_INT, i, IDLE_TAG, MPI_COMM_WORLD, &idle_send_request);
+            }
+
+            for (int i = 0; i < n_tasks; i++) {
+                MPI_Iprobe(i, WORK_TAG, MPI_COMM_WORLD, &work_receive_flag, MPI_STATUS_IGNORE);
+                if (work_receive_flag) {
+                    Node subproblem = (Node) calloc(1, sizeof(struct node));
+                    size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
+                    char * placeholder_buffer = (char *) calloc(size, sizeof(char));
+
+                    MPI_Recv(placeholder_buffer, size, MPI_BYTE, i, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    if (placeholder_buffer[0] == 0) {
+                        terminated_processes[i] = true;
+                        free(subproblem);
+                    }
+                    else {
+                        terminated_processes[i] = false;
+                        terminated_processes[id] = false;
+                        memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
+                        subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
+                        memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
+                        memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
+                        memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
+                        queue.push(subproblem);
+                    }
+                    free(placeholder_buffer);
+                }
+            }
+            
+        }
+        else {
+            terminated = false;
+            terminated_processes[id] = false;
+            
+            int i;
+            for (i = 0; i < n_tasks; i++) {
+                if (i != id && !queue.empty()) {
+                    MPI_Iprobe(i, IDLE_TAG, MPI_COMM_WORLD, &idle_receive_flag, &idle_send_status);
+                    if (idle_receive_flag) {
+                        Node node = queue.pop();
+
+                        int length = node->length;
+                        char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
+                        memcpy(buffer, &length, sizeof(int));
+                        memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
+                        memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
+                        memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
+
+                        MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, i, WORK_TAG, MPI_COMM_WORLD);
+
+                        free(node->tour);
+                        free(node);
+                        free(buffer);
+                    }
+                }
+                if (queue.empty()) break;
+            }
+            if (queue.empty()) {
+                terminated_processes[id] = true;
+                for (i = 0; i < n_tasks; i++) {
+                    MPI_Send(&i, 1, MPI_INT, i, WORK_TAG, MPI_COMM_WORLD);
+                    terminated_processes[i] = true;
+                }
+            }
+        }
+
+        terminated = true;
+        for (int i = 0; i < n_tasks; i++) {
+            if (!terminated_processes[i]) {
+                terminated = false;
+                break;
+            }
+        }
     }
 
     free(tour_nodes);
