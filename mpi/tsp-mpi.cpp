@@ -104,7 +104,6 @@ void update_mins(int coord, double dist, City ** cities) {
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities, int n_tasks, int id){
     /* INITIALIZATION */
     bool finished = false;
-    char *placeholder_buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*n_cities);
     bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
 
     /* init root */
@@ -202,9 +201,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double other_best_tour_cost;
     int num_idle_processes = 0;
     bool i_am_best = true;
-    bool reduced = false;
+    bool reduced_completed = false;
     int iterations = 0;
-    double delay = 1.0;
+    double delay = n_tasks / 8; /* TODO EXPERIMENT */
     double min_cost = *(best_tour_cost);
 
     MPI_Status allreduce_status, idle_send_status;
@@ -215,24 +214,90 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     bool * terminated_processes;
     terminated_processes = (bool *) calloc(n_tasks, sizeof(bool));
 
-    /* PARALLEL PART */
-    while (!terminated){
+    char ** placeholder_matrix_send = (char **) calloc(n_tasks, sizeof(char *));
+    char ** placeholder_matrix_receive = (char **) calloc(n_tasks, sizeof(char *));
+    for (int i = 0; i < n_tasks; i++) {
+        placeholder_matrix_send[i] = (char *) calloc(1, sizeof(double) *  2 + sizeof(int) + sizeof(int) * (n_cities + 1));   
+        placeholder_matrix_receive[i] = (char *) calloc(1, sizeof(double) *  2 + sizeof(int) + sizeof(int) * (n_cities + 1));   
+    }
+    
+    // int * counts = (int *) calloc(n_tasks, sizeof(int));
+    // int * displs = (int *) calloc(n_tasks, sizeof(int));
+    // for (int i = 0; i < n_tasks; i++) {
+    //     counts[i] = 1;
+    //     displs[i] = (2 * sizeof(double) + sizeof(int) + sizeof(int) * (n_cities + 1)) * i;
+    // }
 
-        /* every second, exchange the best cost */
+    /* PARALLEL PART */
+    while (1){
+
+        /* every <delay>, exchange the best cost and the best n_tasks nodes */
         if (MPI_Wtime() - last_communication > delay) {
+            /* TODO: is this necessary forever? */
             MPI_Iallreduce(best_tour_cost, &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &allreduce_request);
+            reduced_completed = true;
+
+            /* construct an array of n_tasks nodes (serialized) */
+            
+            for (int i = 0; i < n_tasks; i++) {
+                if (!queue.empty()) {
+                    Node node = queue.pop();
+                    memcpy(placeholder_matrix_send[i], &node->length, sizeof(int));
+                    memcpy(placeholder_matrix_send[i] + sizeof(int), node->tour, sizeof(int) * node->length);
+                    memcpy(placeholder_matrix_send[i] + sizeof(int) + sizeof(int) * (n_cities + 1), &node->cost, sizeof(double));
+                    memcpy(placeholder_matrix_send[i] + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), &node->lower_bound, sizeof(double));
+                }
+                else break;
+            }
+            fprintf(stderr, "p%d before all to all\n", id);
+
+            // MPI_Alltoallv(placeholder_matrix_send, counts, displs, MPI_BYTE, placeholder_matrix_receive, counts, displs, MPI_BYTE, MPI_COMM_WORLD);
+            MPI_Alltoall(placeholder_matrix_send, 1, MPI_BYTE, placeholder_matrix_receive, 1, MPI_BYTE, MPI_COMM_WORLD);
+            fprintf(stderr,"p%d after all to all\n", id);
+            terminated = true;
+            for (int i = 0; i < n_tasks; i++) {
+                /* receive and deserialize node */
+                int length;
+                fprintf(stderr, "p%d A ... i -> %d\n", id, i);
+                if (placeholder_matrix_receive[i] == NULL){
+                    fprintf(stderr, "NULLLLLLLL\n");
+                }
+                fprintf(stderr, "%s\n", placeholder_matrix_receive[i]);
+                memcpy(&length, placeholder_matrix_receive[i], sizeof(int));
+                fprintf(stderr, "p%d B\n", id);
+
+                if (length != 0){
+                    fprintf(stderr, "p%d C\n", id);
+                    Node node = (Node) calloc(1, sizeof(struct node));
+                    fprintf(stderr, "P%d D\n", id);
+                    node->length = length;
+                    node->tour = (int *) calloc(node->length, sizeof(int));
+                    fprintf(stderr, "p%d E\n", id);
+                    
+                    memcpy(node->tour, placeholder_matrix_receive[i] + sizeof(int), sizeof(int) * node->length);
+                    fprintf(stderr, "p%d F\n", id);
+                    
+                    memcpy(&node->cost, placeholder_matrix_receive[i] + sizeof(int) + sizeof(int) * (n_cities + 1), sizeof(double));
+                    fprintf(stderr, "p%d G\n", id);
+
+                    memcpy(&node->lower_bound, placeholder_matrix_receive[i] + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), sizeof(double));
+                    fprintf(stderr, "p%d H\n", id);
+                    fprintf(stderr, "Node: %d, %f, %f\n", node->length, node->lower_bound, node->cost);
+                    terminated = false;
+                }
+            }
+            if (terminated) break;
             last_communication = MPI_Wtime();
-            reduced = true;
         } 
         
         /* check if the message has been completed */
-        if (reduced && (MPI_Wtime() - last_communication > delay / 10)){
+        if (reduced_completed && (MPI_Wtime() - last_communication > delay / 10)){
             MPI_Test(&allreduce_request, &allreduce_flag, MPI_STATUS_IGNORE);
             if (allreduce_flag) {
                 /* if the minimum cost didn't come from me, save that information */
                 if (min_cost != (*best_tour_cost)) i_am_best = false;
                 else i_am_best = true;
-                reduced = false;
+                reduced_completed = false;
             }
         }
 
@@ -240,7 +305,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         int node_id = node->tour[node->length - 1];
 
         // All remaining nodes worse than best
-        if (node->lower_bound >= (*best_tour_cost) || (!reduced && node->lower_bound >= min_cost)) {
+        if (node->lower_bound >= (*best_tour_cost) || (!reduced_completed && node->lower_bound >= min_cost)) {
             free(node->tour);
             free(node);
             while (!queue.empty()) {
@@ -253,7 +318,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
 
         // Tour complete, check if it is best
         if (node->length == n_cities) {
-            if (node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
+            if ((!reduced_completed && node->cost +  matrix[node_id * n_cities + 0] < min_cost && matrix[node_id * n_cities + 0] >= 0.0001) || node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
                 int i;
                 for (i = 0; i < n_cities; i++) {
                     (*best_tour)[i] = node->tour[i];
@@ -294,87 +359,18 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         free(node->tour);
         free(node);
 
-        /* if a process has no more nodes, it asks the others */
-        if (queue.empty()) {
-            terminated_processes[id] = true;
-            for (int i = 0; i < n_tasks; i++) {
-                MPI_Isend(&i, 1, MPI_INT, i, IDLE_TAG, MPI_COMM_WORLD, &idle_send_request);
-            }
-
-            for (int i = 0; i < n_tasks; i++) {
-                MPI_Iprobe(i, WORK_TAG, MPI_COMM_WORLD, &work_receive_flag, MPI_STATUS_IGNORE);
-                if (work_receive_flag) {
-                    Node subproblem = (Node) calloc(1, sizeof(struct node));
-                    size_t size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
-                    char * placeholder_buffer = (char *) calloc(size, sizeof(char));
-
-                    MPI_Recv(placeholder_buffer, size, MPI_BYTE, i, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                    if (placeholder_buffer[0] == 0) {
-                        terminated_processes[i] = true;
-                        free(subproblem);
-                    }
-                    else {
-                        terminated_processes[i] = false;
-                        terminated_processes[id] = false;
-                        memcpy(&subproblem->length, placeholder_buffer, sizeof(int));
-                        subproblem->tour = (int *) calloc(subproblem->length, sizeof(int));
-                        memcpy(subproblem->tour, placeholder_buffer + sizeof(int), sizeof(int) * subproblem->length);
-                        memcpy(&subproblem->cost, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length, sizeof(double));
-                        memcpy(&subproblem->lower_bound, placeholder_buffer + sizeof(int) + sizeof(int) * subproblem->length + sizeof(double), sizeof(double));
-                        queue.push(subproblem);
-                    }
-                    free(placeholder_buffer);
-                }
-            }
-            
-        }
-        else {
-            terminated = false;
-            terminated_processes[id] = false;
-            
-            int i;
-            for (i = 0; i < n_tasks; i++) {
-                if (i != id && !queue.empty()) {
-                    MPI_Iprobe(i, IDLE_TAG, MPI_COMM_WORLD, &idle_receive_flag, &idle_send_status);
-                    if (idle_receive_flag) {
-                        Node node = queue.pop();
-
-                        int length = node->length;
-                        char * buffer = (char *) calloc(1, sizeof(double)*2 + sizeof(int) + sizeof(int)*length);
-                        memcpy(buffer, &length, sizeof(int));
-                        memcpy(buffer + sizeof(int), node->tour, sizeof(int) * length);
-                        memcpy(buffer + sizeof(int) + sizeof(int) * length, &node->cost, sizeof(double));
-                        memcpy(buffer + sizeof(int) + sizeof(int) * length + sizeof(double), &node->lower_bound, sizeof(double));
-
-                        MPI_Send(buffer, sizeof(double)*2 + sizeof(int) + sizeof(int)*length, MPI_BYTE, i, WORK_TAG, MPI_COMM_WORLD);
-
-                        free(node->tour);
-                        free(node);
-                        free(buffer);
-                    }
-                }
-                if (queue.empty()) break;
-            }
-            if (queue.empty()) {
-                terminated_processes[id] = true;
-                for (i = 0; i < n_tasks; i++) {
-                    MPI_Send(&i, 1, MPI_INT, i, WORK_TAG, MPI_COMM_WORLD);
-                    terminated_processes[i] = true;
-                }
-            }
-        }
-
-        terminated = true;
-        for (int i = 0; i < n_tasks; i++) {
-            if (!terminated_processes[i]) {
-                terminated = false;
-                break;
-            }
-        }
     }
 
     free(tour_nodes);
+
+    for (int i = 0; i < n_tasks; i++) {
+        free(placeholder_matrix_send[i]);
+        free(placeholder_matrix_receive[i]);
+    }
+    // free(counts);
+    // free(displs);
+    free(placeholder_matrix_send);
+    free(placeholder_matrix_receive);
 
     /* in the end, determine the best solution */
     double best_tour_cost_neighbor;
