@@ -122,7 +122,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     bool * tour_nodes_init = (bool *) calloc(n_cities, sizeof(bool));
     PriorityQueue<Node, cmp_op> initial_queue;
     initial_queue.push(root);
-    while (initial_queue.size() < 100000 || initial_queue.empty()) {
+    while (initial_queue.size() <= 10000 || initial_queue.empty()) {
         Node node = initial_queue.pop();
         int node_id = node->tour[node->length - 1];
 
@@ -232,7 +232,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             /* TODO: is this necessary forever? */
             MPI_Iallreduce(best_tour_cost, &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &allreduce_request);
             reduced_completed = true;
-
+        } 
+        
+        if (iterations % 1000000 == 0) {
             /* construct an array of n_tasks nodes (serialized) */
             memset(placeholder_matrix_send, 0, n_tasks * size * sizeof(char));
             for (int i = 0; i < n_tasks; i++) {
@@ -289,8 +291,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (terminated) {
                 break;
             } 
-        } 
-        
+        }
         /* check if the message has been completed */
         if (reduced_completed && (iterations % 50000 == 0)){
             MPI_Test(&allreduce_request, &allreduce_flag, MPI_STATUS_IGNORE);
@@ -315,7 +316,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     free(n->tour);
                     free(n);
                 }
-                break;
+                continue;
             }
 
             // Tour complete, check if it is best
