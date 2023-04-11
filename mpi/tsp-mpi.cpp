@@ -214,12 +214,9 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     bool * terminated_processes;
     terminated_processes = (bool *) calloc(n_tasks, sizeof(bool));
 
-    char ** placeholder_matrix_send = (char **) calloc(n_tasks, sizeof(char *));
-    char ** placeholder_matrix_receive = (char **) calloc(n_tasks, sizeof(char *));
-    for (int i = 0; i < n_tasks; i++) {
-        placeholder_matrix_send[i] = (char *) calloc(1, sizeof(double) *  2 + sizeof(int) + sizeof(int) * (n_cities + 1));   
-        placeholder_matrix_receive[i] = (char *) calloc(1, sizeof(double) *  2 + sizeof(int) + sizeof(int) * (n_cities + 1));   
-    }
+    int size = sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double) * 2;
+    char * placeholder_matrix_send = (char *) calloc(1, n_tasks * sizeof(char) * size);
+    char * placeholder_matrix_receive = (char *) calloc(1, n_tasks * (sizeof(char) * size));
     
     // int * counts = (int *) calloc(n_tasks, sizeof(int));
     // int * displs = (int *) calloc(n_tasks, sizeof(int));
@@ -227,71 +224,75 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     //     counts[i] = 1;
     //     displs[i] = (2 * sizeof(double) + sizeof(int) + sizeof(int) * (n_cities + 1)) * i;
     // }
-
     /* PARALLEL PART */
-    while (1){
-
+    while (1) {
+        iterations++;
         /* every <delay>, exchange the best cost and the best n_tasks nodes */
-        if (MPI_Wtime() - last_communication > delay) {
+        if (iterations % 500000 == 0) {
             /* TODO: is this necessary forever? */
             MPI_Iallreduce(best_tour_cost, &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &allreduce_request);
             reduced_completed = true;
 
             /* construct an array of n_tasks nodes (serialized) */
-            
+            memset(placeholder_matrix_send, 0, n_tasks * size * sizeof(char));
             for (int i = 0; i < n_tasks; i++) {
                 if (!queue.empty()) {
                     Node node = queue.pop();
-                    memcpy(placeholder_matrix_send[i], &node->length, sizeof(int));
-                    memcpy(placeholder_matrix_send[i] + sizeof(int), node->tour, sizeof(int) * node->length);
-                    memcpy(placeholder_matrix_send[i] + sizeof(int) + sizeof(int) * (n_cities + 1), &node->cost, sizeof(double));
-                    memcpy(placeholder_matrix_send[i] + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), &node->lower_bound, sizeof(double));
+                    memcpy(placeholder_matrix_send + i * size, &node->length, sizeof(int));
+                    memcpy(placeholder_matrix_send + i * size + sizeof(int), node->tour, sizeof(int) * node->length);
+                    memcpy(placeholder_matrix_send + i * size + sizeof(int) + sizeof(int) * (n_cities + 1), &node->cost, sizeof(double));
+                    memcpy(placeholder_matrix_send + i * size + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), &node->lower_bound, sizeof(double));
+                    free(node->tour);
+                    free(node);
                 }
-                else break;
+                else {
+                    break;
+                }
             }
-            fprintf(stderr, "p%d before all to all\n", id);
+            //fprintf(stderr, "p%d before all to all\n", id);
 
             // MPI_Alltoallv(placeholder_matrix_send, counts, displs, MPI_BYTE, placeholder_matrix_receive, counts, displs, MPI_BYTE, MPI_COMM_WORLD);
-            MPI_Alltoall(placeholder_matrix_send, 1, MPI_BYTE, placeholder_matrix_receive, 1, MPI_BYTE, MPI_COMM_WORLD);
-            fprintf(stderr,"p%d after all to all\n", id);
+            
+            MPI_Alltoall(placeholder_matrix_send, size, MPI_BYTE, placeholder_matrix_receive, size, MPI_BYTE, MPI_COMM_WORLD);
+            //fprintf(stderr,"p%d after all to all\n", id);
             terminated = true;
+            
             for (int i = 0; i < n_tasks; i++) {
                 /* receive and deserialize node */
                 int length;
-                fprintf(stderr, "p%d A ... i -> %d\n", id, i);
-                if (placeholder_matrix_receive[i] == NULL){
-                    fprintf(stderr, "NULLLLLLLL\n");
-                }
-                fprintf(stderr, "%s\n", placeholder_matrix_receive[i]);
-                memcpy(&length, placeholder_matrix_receive[i], sizeof(int));
-                fprintf(stderr, "p%d B\n", id);
-
-                if (length != 0){
-                    fprintf(stderr, "p%d C\n", id);
+                //fprintf(stderr, "p%d A ... i -> %d\n", id, i);
+                
+                memcpy(&length, placeholder_matrix_receive + i * size, sizeof(int));
+                //fprintf(stderr, "p%d B\n", id);
+                if (length > 0){
+                    //fprintf(stderr, "p%d C\n", id);
                     Node node = (Node) calloc(1, sizeof(struct node));
-                    fprintf(stderr, "P%d D\n", id);
+                    //fprintf(stderr, "P%d D\n", id);
                     node->length = length;
                     node->tour = (int *) calloc(node->length, sizeof(int));
-                    fprintf(stderr, "p%d E\n", id);
+                    //fprintf(stderr, "p%d E\n", id);
                     
-                    memcpy(node->tour, placeholder_matrix_receive[i] + sizeof(int), sizeof(int) * node->length);
-                    fprintf(stderr, "p%d F\n", id);
+                    memcpy(node->tour, placeholder_matrix_receive + i * size + sizeof(int), sizeof(int) * node->length);
+                    //fprintf(stderr, "p%d F\n", id);
                     
-                    memcpy(&node->cost, placeholder_matrix_receive[i] + sizeof(int) + sizeof(int) * (n_cities + 1), sizeof(double));
-                    fprintf(stderr, "p%d G\n", id);
+                    memcpy(&node->cost, placeholder_matrix_receive + i * size + sizeof(int) + sizeof(int) * (n_cities + 1), sizeof(double));
+                    //fprintf(stderr, "p%d G\n", id);
 
-                    memcpy(&node->lower_bound, placeholder_matrix_receive[i] + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), sizeof(double));
-                    fprintf(stderr, "p%d H\n", id);
-                    fprintf(stderr, "Node: %d, %f, %f\n", node->length, node->lower_bound, node->cost);
+                    memcpy(&node->lower_bound, placeholder_matrix_receive + i * size + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), sizeof(double));
+                    //fprintf(stderr, "p%d H\n", id);
+                    //fprintf(stderr, "Node: %d, %f, %f\n", node->length, node->lower_bound, node->cost);
                     terminated = false;
+                    queue.push(node);
                 }
             }
-            if (terminated) break;
-            last_communication = MPI_Wtime();
+            memset(placeholder_matrix_receive, 0, n_tasks * size);
+            if (terminated) {
+                break;
+            } 
         } 
         
         /* check if the message has been completed */
-        if (reduced_completed && (MPI_Wtime() - last_communication > delay / 10)){
+        if (reduced_completed && (iterations % 50000 == 0)){
             MPI_Test(&allreduce_request, &allreduce_flag, MPI_STATUS_IGNORE);
             if (allreduce_flag) {
                 /* if the minimum cost didn't come from me, save that information */
@@ -301,72 +302,68 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         }
 
-        Node node = queue.pop();
-        int node_id = node->tour[node->length - 1];
+        if (!queue.empty()) {
+            Node node = queue.pop();
+            int node_id = node->tour[node->length - 1];
 
-        // All remaining nodes worse than best
-        if (node->lower_bound >= (*best_tour_cost) || (!reduced_completed && node->lower_bound >= min_cost)) {
+            // All remaining nodes worse than best
+            if (node->lower_bound >= (*best_tour_cost) || (!reduced_completed && node->lower_bound >= min_cost)) {
+                free(node->tour);
+                free(node);
+                while (!queue.empty()) {
+                    Node n = queue.pop();
+                    free(n->tour);
+                    free(n);
+                }
+                break;
+            }
+
+            // Tour complete, check if it is best
+            if (node->length == n_cities) {
+                if ((!reduced_completed && node->cost +  matrix[node_id * n_cities + 0] < min_cost && matrix[node_id * n_cities + 0] >= 0.0001) || node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
+                    int i;
+                    for (i = 0; i < n_cities; i++) {
+                        (*best_tour)[i] = node->tour[i];
+                    }
+                    (*best_tour)[i] = 0;
+
+                    (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
+                }
+            } 
+            else {
+                for (int i = 0; i < node->length; i++) {
+                    tour_nodes[node->tour[i]] = true;
+                }
+                
+                for (int i = 0; i < n_cities; i++) {
+                    if (matrix[node_id * n_cities + i] != 0 && !tour_nodes[i]) {
+                        double new_bound_value = newBound(cities[node_id], cities[i], node->lower_bound, n_cities, matrix);
+                        if(new_bound_value > (*best_tour_cost)) {
+                            continue;
+                        }
+                        Node newNode = (Node) calloc(1, sizeof(struct node));
+                        newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
+                        for (int j = 0; j < node->length; j++) {
+                            newNode->tour[j] = node->tour[j];
+                        }
+                        newNode->tour[node->length] = i;
+                        newNode->cost = node->cost + matrix[node_id * n_cities + i];
+                        newNode->lower_bound = new_bound_value;
+                        newNode->length = node->length + 1;
+                        queue.push(newNode);
+                    }
+                }
+
+                memset(tour_nodes, false, n_cities * sizeof(bool));
+
+            }
+
             free(node->tour);
             free(node);
-            while (!queue.empty()) {
-                Node n = queue.pop();
-                free(n->tour);
-                free(n);
-            }
-            break;
         }
-
-        // Tour complete, check if it is best
-        if (node->length == n_cities) {
-            if ((!reduced_completed && node->cost +  matrix[node_id * n_cities + 0] < min_cost && matrix[node_id * n_cities + 0] >= 0.0001) || node->cost + matrix[node_id * n_cities + 0] < (*best_tour_cost) && matrix[node_id * n_cities + 0] >= 0.0001) {
-                int i;
-                for (i = 0; i < n_cities; i++) {
-                    (*best_tour)[i] = node->tour[i];
-                }
-                (*best_tour)[i] = 0;
-
-                (*best_tour_cost) = node->cost + matrix[node_id * n_cities + 0];
-            }
-        } 
-        else {
-            for (int i = 0; i < node->length; i++) {
-                tour_nodes[node->tour[i]] = true;
-            }
-            
-            for (int i = 0; i < n_cities; i++) {
-                if (matrix[node_id * n_cities + i] != 0 && !tour_nodes[i]) {
-                    double new_bound_value = newBound(cities[node_id], cities[i], node->lower_bound, n_cities, matrix);
-                    if(new_bound_value > (*best_tour_cost)) {
-                        continue;
-                    }
-                    Node newNode = (Node) calloc(1, sizeof(struct node));
-                    newNode->tour = (int *) calloc(node->length + 1, sizeof(int));
-                    for (int j = 0; j < node->length; j++) {
-                        newNode->tour[j] = node->tour[j];
-                    }
-                    newNode->tour[node->length] = i;
-                    newNode->cost = node->cost + matrix[node_id * n_cities + i];
-                    newNode->lower_bound = new_bound_value;
-                    newNode->length = node->length + 1;
-                    queue.push(newNode);
-                }
-            }
-
-            memset(tour_nodes, false, n_cities * sizeof(bool));
-
-        }
-
-        free(node->tour);
-        free(node);
-
     }
 
     free(tour_nodes);
-
-    for (int i = 0; i < n_tasks; i++) {
-        free(placeholder_matrix_send[i]);
-        free(placeholder_matrix_receive[i]);
-    }
     // free(counts);
     // free(displs);
     free(placeholder_matrix_send);
