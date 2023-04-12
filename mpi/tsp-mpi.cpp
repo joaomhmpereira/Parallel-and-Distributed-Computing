@@ -126,7 +126,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int flag, flag2;
     int empty_queue = 2;
     int size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
-    char *buffer = (char *) calloc(1, size);
 
     //printf("[TASK %d] Executing sequential part...\n", id);
     /* init root */
@@ -226,18 +225,15 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int num_idle_processes = 0;
     bool broadcasted = false, reduced = false;
     MPI_Status bcast_status;
-
-    int n_reduced = 0;
     
     // todos a trabalhar em paralelo
     while (num_idle_processes != n_tasks) {
         iterations++;
 
-        if (iterations % 500000 == 0 && n_reduced < 5) {
+        if (iterations % 500000 == 0) {
             //fprintf(stderr, "[TASK %d] ... reducing ... \n", id);
             MPI_Iallreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &request_allreduce);
             reduced = true;
-            n_reduced++;
             //fprintf(stderr, "[TASK %d] !!! already reduced !!! \n", id);
             
             color = BLACK;
@@ -262,24 +258,27 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 int source = bcast_status.MPI_SOURCE;
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 
-                if (!queue.empty() && queue.size() > 1) {                    
-                    Node node = queue.pop();
-                    memcpy(buffer, &node->length, sizeof(int));
-                    memcpy(buffer + sizeof(int), node->tour, sizeof(int) * node->length);
-                    memcpy(buffer + sizeof(int) + sizeof(int) * (n_cities + 1), &node->cost, sizeof(double));
-                    memcpy(buffer + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), &node->lower_bound, sizeof(double));
-                    MPI_Send(buffer, size, MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
-                    
-                    free(node->tour);
-                    free(node);
-                    memset(buffer, 0, size);
-                    //fprintf(stderr, "[TASK %d] Received broadcast from %d, SENT ONE NODE (I still have %d) -> Idle: %d\n", id, source, queue.size(), num_idle_processes);
-                }
-                else {
+                int n_send_total = 1; //(int) queue.size() / ((n_tasks - num_idle_processes) * 10);
+
+                if (queue.size() < (n_tasks - num_idle_processes) * 1) {
                     idle_processes[source] = true;
                     num_idle_processes++;
-                    //fprintf(stderr, "[TASK %d] Received broadcast from %d, DONT HAVE NODES TO SEND %d -> Idle: %d\n", id, source, queue.size(), num_idle_processes);
-                } 
+                } else {
+                    fprintf(stderr, "[TASK %d] will send %d nodes to task %d\n", id, n_send_total, source);
+                    char * buffer = (char *) calloc(1, size * n_send_total * sizeof(char));
+                    for (int n_send = 0; n_send < n_send_total; n_send++) {
+                        Node node = queue.pop();
+                        memcpy(buffer + n_send * size, &node->length, sizeof(int));
+                        memcpy(buffer + n_send * size + sizeof(int), node->tour, sizeof(int) * node->length);
+                        memcpy(buffer + n_send * size + sizeof(int) + sizeof(int) * (n_cities + 1), &node->cost, sizeof(double));
+                        memcpy(buffer + n_send * size + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), &node->lower_bound, sizeof(double));
+                        
+                        free(node->tour);
+                        free(node);
+                    }
+                    MPI_Send(buffer, size * n_send_total * sizeof(char), MPI_BYTE, source, WORK_TAG, MPI_COMM_WORLD);
+                    free(buffer);
+                }
             }
         }
 
@@ -287,17 +286,26 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             while(1) {
                 MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &bcast_status);
                 if (flag){
-                    //receive message
-                    MPI_Recv(buffer, size, MPI_BYTE, bcast_status.MPI_SOURCE, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    //alloc node and copy data
-                    Node node = (Node) calloc(1, sizeof(struct node));
-                    memcpy(&node->length, buffer, sizeof(int));
-                    node->tour = (int *) calloc(node->length, sizeof(int));
-                    memcpy(node->tour, buffer + sizeof(int), sizeof(int) * node->length);
-                    memcpy(&node->cost, buffer + sizeof(int) + sizeof(int) * (n_cities + 1), sizeof(double));
-                    memcpy(&node->lower_bound, buffer + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), sizeof(double));
-                    queue.push(node);
-                    memset(buffer, 0, size);
+                    int received_size;
+                    MPI_Get_count(&bcast_status, MPI_BYTE, &received_size);
+
+                    int n_receive_total = received_size / size;
+                    fprintf(stderr, "[TASK %d] received %d nodes from %d\n", id, n_receive_total, bcast_status.MPI_SOURCE);
+
+                    char * buffer = (char *) calloc(1, received_size);
+                    MPI_Recv(buffer, received_size, MPI_BYTE, bcast_status.MPI_SOURCE, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    for (int n_receive = 0; n_receive < n_receive_total; n_receive++) {
+                        Node node = (Node) calloc(1, sizeof(struct node));
+                        memcpy(&node->length     , buffer + n_receive * size,  sizeof(int));
+                        node->tour = (int *) calloc(node->length, sizeof(int));
+                        memcpy(node->tour        , buffer + n_receive * size + sizeof(int),  sizeof(int) * node->length);
+                        memcpy(&node->cost       , buffer + n_receive * size + sizeof(int) + sizeof(int) * (n_cities + 1), sizeof(double));
+                        memcpy(&node->lower_bound, buffer + n_receive * size + sizeof(int) + sizeof(int) * (n_cities + 1) + sizeof(double), sizeof(double));
+                        queue.push(node);
+                    }
+                    
+                    free(buffer);
                     //update idle flag
                     if (idle_processes[id]) {
                         idle_processes[id] = false;
@@ -384,7 +392,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         }
     }
-    free(buffer);
     free(tour_nodes);
 
     /* in the end, determine the best solution */
