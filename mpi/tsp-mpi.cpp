@@ -225,6 +225,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     int num_idle_processes = 0;
     bool broadcasted = false, reduced = false;
     MPI_Status bcast_status;
+ 
+    bool * broadcasted_to = (bool *) calloc(n_tasks, sizeof(bool));
     
     // todos a trabalhar em paralelo
     while (num_idle_processes != n_tasks) {
@@ -286,6 +288,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             while(1) {
                 MPI_Iprobe(MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &flag, &bcast_status);
                 if (flag){
+                    broadcasted_to[bcast_status.MPI_SOURCE] = false;
+
                     int received_size;
                     MPI_Get_count(&bcast_status, MPI_BYTE, &received_size);
 
@@ -381,7 +385,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (!broadcasted) {
                 //MPI_Ibcast(&empty_queue, 1, MPI_INT, id, MPI_COMM_WORLD, &request_broadcast);
                 for (int i = 0; i < n_tasks; i++) {
-                    if (i != id) {
+                    if (i != id && !broadcasted_to[i]) {
+                        broadcasted_to[i] = true;
                         MPI_Isend(&empty_queue, 1, MPI_INT, i, IDLE_TAG, MPI_COMM_WORLD, &request_broadcast);
                     }
                 }
