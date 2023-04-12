@@ -248,7 +248,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (flag2){
                 if (min_cost < (*best_tour_cost) && min_cost > 0.0001){
                     (*best_tour_cost) = min_cost;
-                    fprintf(stderr, "[TASK %d] !!! best tour cost updated !!! \n", id);
+                    //fprintf(stderr, "[TASK %d] !!! best tour cost updated !!! \n", id);
                 }
                 reduced = false;
             }
@@ -266,7 +266,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     idle_processes[source] = true;
                     num_idle_processes++;
                 } else {
-                    fprintf(stderr, "[TASK %d] will send %d nodes to task %d\n", id, n_send_total, source);
+                    //fprintf(stderr, "[TASK %d] will send %d nodes to task %d\n", id, n_send_total, source);
                     char * buffer = (char *) calloc(1, size * n_send_total * sizeof(char));
                     for (int n_send = 0; n_send < n_send_total; n_send++) {
                         Node node = queue.pop();
@@ -294,7 +294,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     MPI_Get_count(&bcast_status, MPI_BYTE, &received_size);
 
                     int n_receive_total = received_size / size;
-                    fprintf(stderr, "[TASK %d] received %d nodes from %d\n", id, n_receive_total, bcast_status.MPI_SOURCE);
+                    //fprintf(stderr, "[TASK %d] received %d nodes from %d\n", id, n_receive_total, bcast_status.MPI_SOURCE);
 
                     char * buffer = (char *) calloc(1, received_size);
                     MPI_Recv(buffer, received_size, MPI_BYTE, bcast_status.MPI_SOURCE, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -393,7 +393,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 broadcasted = true;
                 num_idle_processes++;
                 idle_processes[id] = true;
-                fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
+                //fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
             }
         }
     }
@@ -403,7 +403,7 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     double best_tour_cost_neighbor;
     int best_tour_neighbor[n_cities + 1];
 
-    fprintf(stderr, "[TASK %d] Waiting for all processes to finish...\n", id);
+    //fprintf(stderr, "[TASK %d] Waiting for all processes to finish...\n", id);
     //MPI_Barrier(MPI_COMM_WORLD);
 
     if (id) {
