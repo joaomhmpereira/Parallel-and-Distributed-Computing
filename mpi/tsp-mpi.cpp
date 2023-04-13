@@ -412,10 +412,10 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
     else {
         MPI_Status status;
-        printf("[TASK %d] Local cost: %f\n", id, (*best_tour_cost));
+        //printf("[TASK %d] Local cost: %f\n", id, (*best_tour_cost));
         for (int i = 1; i < n_tasks; i++) {
             MPI_Recv(&best_tour_cost_neighbor, 1, MPI_DOUBLE, i, COST_TAG, MPI_COMM_WORLD, &status);
-            printf("[TASK %d] Received cost from %d: %f\n", id, i, best_tour_cost_neighbor);
+            //printf("[TASK %d] Received cost from %d: %f\n", id, i, best_tour_cost_neighbor);
             
             MPI_Recv(best_tour_neighbor, n_cities + 1, MPI_INT, i, TOUR_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             if (best_tour_cost_neighbor <= (*best_tour_cost) && best_tour_cost_neighbor > 0.0001 && verify_tour(n_cities, matrix, best_tour_neighbor, best_tour_cost_neighbor)) {
