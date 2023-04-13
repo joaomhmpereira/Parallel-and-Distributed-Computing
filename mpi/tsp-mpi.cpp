@@ -105,24 +105,23 @@ bool verify_tour(int n_cities, double * matrix, int * tour, double cost) {
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /**
- * Dar free à intial_queue
+ * Traveling Salesman Problem - MPI Branch and Bound Algorithm 
  * 
- * Perguntas:
- *  - como é que mandamos um Node? bytes? ou temos de criar estruturas do MPI?
- * 
-*/
+ * @param best_tour_cost
+ * @param max_value
+ * @param n_cities
+ * @param best_tour
+ * @param matrix
+ * @param cities
+ * @param n_tasks
+ * @param id
+ */
 void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour, double * matrix, City * cities, int n_tasks, int id){
     /* INITIALIZATION */
     bool finished = false;
     bool * tour_nodes = (bool *) calloc(n_cities, sizeof(bool));
     
-    /* RING TERMINATION */
-    int color = BLACK;
-    int token = BLACK;
-    int next_rank = (id + 1) % n_tasks;
-    int prev_rank = (id + n_tasks - 1) % n_tasks;
-    MPI_Request request_broadcast, request_receive, request_allreduce;
-    int terminate = -1;     
+    MPI_Request request_broadcast, request_allreduce;
     int flag, flag2;
     int empty_queue = 2;
     int size = sizeof(double) * 2 + sizeof(int) + sizeof(int) * (n_cities + 1);
@@ -200,8 +199,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         free(node);
     }  
 
-    //free(tour_nodes_init);
-
     if (initial_queue.empty()) return;
 
     PriorityQueue<Node, cmp_op> queue;
@@ -218,7 +215,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         i++;
     }
 
-    //MPI_Scatter(........) -> a task 0 manda nós para as outras tasks
     int iterations = 0;
     double min_cost = 0.0;
     bool idle_processes[n_tasks] = {false};
@@ -228,19 +224,12 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
  
     bool * broadcasted_to = (bool *) calloc(n_tasks, sizeof(bool));
     
-    // todos a trabalhar em paralelo
     while (num_idle_processes != n_tasks) {
         iterations++;
 
         if (iterations % 500000 == 0) {
-            //fprintf(stderr, "[TASK %d] ... reducing ... \n", id);
             MPI_Iallreduce(&(*best_tour_cost), &min_cost, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD, &request_allreduce);
-            reduced = true;
-            //fprintf(stderr, "[TASK %d] !!! already reduced !!! \n", id);
-            
-            color = BLACK;
-            //fprintf(stderr, "[TASK %d] Best tour cost: %f\n", id, *(best_tour_cost));
-        
+            reduced = true;        
         } 
         
         if (reduced && iterations % 50000 == 0){
@@ -248,7 +237,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             if (flag2){
                 if (min_cost < (*best_tour_cost) && min_cost > 0.0001){
                     (*best_tour_cost) = min_cost;
-                    //fprintf(stderr, "[TASK %d] !!! best tour cost updated !!! \n", id);
                 }
                 reduced = false;
             }
@@ -260,13 +248,11 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 int source = bcast_status.MPI_SOURCE;
                 MPI_Recv(&empty_queue, 1, MPI_INT, source, IDLE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 
-                int n_send_total = 1; //(int) queue.size() / ((n_tasks - num_idle_processes) * 10);
-
+                int n_send_total = 1; 
                 if (queue.size() < (n_tasks - num_idle_processes) * 1) {
                     idle_processes[source] = true;
                     num_idle_processes++;
                 } else {
-                    //fprintf(stderr, "[TASK %d] will send %d nodes to task %d\n", id, n_send_total, source);
                     char * buffer = (char *) calloc(1, size * n_send_total * sizeof(char));
                     for (int n_send = 0; n_send < n_send_total; n_send++) {
                         Node node = queue.pop();
@@ -294,7 +280,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                     MPI_Get_count(&bcast_status, MPI_BYTE, &received_size);
 
                     int n_receive_total = received_size / size;
-                    //fprintf(stderr, "[TASK %d] received %d nodes from %d\n", id, n_receive_total, bcast_status.MPI_SOURCE);
 
                     char * buffer = (char *) calloc(1, received_size);
                     MPI_Recv(buffer, received_size, MPI_BYTE, bcast_status.MPI_SOURCE, WORK_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -383,7 +368,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
         }         
         else {
             if (!broadcasted) {
-                //MPI_Ibcast(&empty_queue, 1, MPI_INT, id, MPI_COMM_WORLD, &request_broadcast);
                 for (int i = 0; i < n_tasks; i++) {
                     if (i != id && !broadcasted_to[i]) {
                         broadcasted_to[i] = true;
@@ -393,18 +377,16 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
                 broadcasted = true;
                 num_idle_processes++;
                 idle_processes[id] = true;
-                //fprintf(stderr, "[TASK %d] ::: broadcasted idle tag! ::: \n", id);
             }
         }
     }
     free(tour_nodes);
+    free(broadcasted_to);
 
     /* in the end, determine the best solution */
     double best_tour_cost_neighbor;
     int best_tour_neighbor[n_cities + 1];
 
-    //fprintf(stderr, "[TASK %d] Waiting for all processes to finish...\n", id);
-    //MPI_Barrier(MPI_COMM_WORLD);
 
     if (id) {
         MPI_Send(best_tour_cost, 1, MPI_DOUBLE, 0, COST_TAG, MPI_COMM_WORLD);
@@ -412,10 +394,8 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
     }
     else {
         MPI_Status status;
-        //printf("[TASK %d] Local cost: %f\n", id, (*best_tour_cost));
         for (int i = 1; i < n_tasks; i++) {
             MPI_Recv(&best_tour_cost_neighbor, 1, MPI_DOUBLE, i, COST_TAG, MPI_COMM_WORLD, &status);
-            //printf("[TASK %d] Received cost from %d: %f\n", id, i, best_tour_cost_neighbor);
             
             MPI_Recv(best_tour_neighbor, n_cities + 1, MPI_INT, i, TOUR_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             if (best_tour_cost_neighbor <= (*best_tour_cost) && best_tour_cost_neighbor > 0.0001 && verify_tour(n_cities, matrix, best_tour_neighbor, best_tour_cost_neighbor)) {
@@ -424,9 +404,6 @@ void tsp(double * best_tour_cost, int max_value, int n_cities, int ** best_tour,
             }
         }
     }
-        
-    // gather e dar a melhor tour (na variavel global)
-    // mpi finish
     return;
 }
 
