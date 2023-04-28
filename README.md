@@ -6,6 +6,8 @@ More specifically, it contains three (one sequential and two parallel) implement
 
 Regarding the parallel implementations, one was done using [OpenMP](https://en.wikipedia.org/wiki/OpenMP) and the other using [MPI (Message Passing Interface)](https://en.wikipedia.org/wiki/Message_Passing_Interface).
 
+Grade: 18/20.
+
 Author | Github
 -------|-------
 Leonor Barreiros      | https://github.com/leonormbarreiros
